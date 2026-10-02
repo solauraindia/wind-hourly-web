@@ -2,13 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { quarterLabel } from "@/lib/format";
 import { IconAlert, IconCheck, IconUpload } from "./Icons";
 
-export function ImportWorkbook({ quarter }: { quarter: string }) {
+export function ImportWorkbook() {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
-  const [withActuals, setWithActuals] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -17,14 +15,13 @@ export function ImportWorkbook({ quarter }: { quarter: string }) {
     setMsg(null);
     const form = new FormData();
     form.append("file", file);
-    if (withActuals) form.append("quarter", quarter);
     try {
       const res = await fetch("/api/devices/import", { method: "POST", body: form });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       setMsg({
         ok: true,
-        text: `${json.added} added, ${json.updated} updated${json.actualRows ? ` · actuals for ${json.actualRows} devices saved to ${quarterLabel(quarter)}` : ""}.`,
+        text: `${json.added} added, ${json.updated} updated${json.skipped.length ? ` · not in irec, skipped: ${json.skipped.join(", ")}` : ""}.`,
       });
       router.refresh();
     } catch (e) {
@@ -39,14 +36,10 @@ export function ImportWorkbook({ quarter }: { quarter: string }) {
       <div className="min-w-[280px] flex-1">
         <h2 className="text-[15px] font-semibold">Import a delivery workbook</h2>
         <p className="mt-0.5 text-[13px] text-muted">
-          Reads <span className="font-medium text-ink">Hourly Files_details</span> for meter / facility / registry ids and{" "}
-          <span className="font-medium text-ink">Sheet1</span> for client names. Existing devices are matched on registry id.
+          Adds devices from the <span className="font-medium text-ink">Hourly Files_details</span> sheet (file name → raw alias and
+          output name, plus registry id). Registry ids must exist in irec; existing devices are updated.
         </p>
       </div>
-      <label className="flex items-center gap-2 text-[13px] text-muted">
-        <input type="checkbox" className="size-4 accent-[var(--accent)]" checked={withActuals} onChange={(e) => setWithActuals(e.target.checked)} />
-        Also load actual / eligible / issued into {quarterLabel(quarter)}
-      </label>
       <button className="btn btn-primary" disabled={busy} onClick={() => input.current?.click()}>
         <IconUpload /> {busy ? "Importing…" : "Choose .xlsx"}
       </button>

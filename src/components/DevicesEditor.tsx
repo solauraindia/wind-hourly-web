@@ -5,21 +5,20 @@ import { useState } from "react";
 import type { Device } from "@/lib/types";
 import { IconAlert, IconCheck, IconX } from "./Icons";
 
-const COLUMNS: { key: keyof Device; label: string; width: string; hint?: string }[] = [
+type Row = Device & { isNew?: boolean };
+
+const EDITABLE: { key: "registryId" | "alias" | "sourceHint" | "outputName"; label: string; width: string; hint: string }[] = [
+  { key: "registryId", label: "Registry id", width: "w-[130px]", hint: "irec devices.device_meta_id (eac_registry_id)" },
   { key: "outputName", label: "Output name", width: "w-[170px]", hint: "File stem: <name>_hourly_2026Q2.xlsx" },
   { key: "alias", label: "Raw alias", width: "w-[110px]", hint: "Turbine name as it appears in the raw export" },
   { key: "sourceHint", label: "Source hint", width: "w-[120px]", hint: "Text in the raw file name that disambiguates repeated aliases" },
-  { key: "client", label: "Client", width: "w-[210px] max-w-[210px]" },
-  { key: "meterId", label: "meter_id", width: "w-[130px]" },
-  { key: "facilityId", label: "eac_facility_id", width: "w-[250px] max-w-[250px]" },
-  { key: "registryId", label: "eac_registry_id", width: "w-[130px]" },
 ];
 
-const blank = (): Device => ({ id: "", alias: "", outputName: "", client: "", meterId: "", facilityId: "", registryId: "" });
+const blank = (): Row => ({ id: "", registryId: "", alias: "", outputName: "", client: "", meterId: "", facilityId: "", inIrec: false, isNew: true });
 
 export function DevicesEditor({ initial }: { initial: Device[] }) {
   const router = useRouter();
-  const [rows, setRows] = useState(initial);
+  const [rows, setRows] = useState<Row[]>(initial);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -31,13 +30,14 @@ export function DevicesEditor({ initial }: { initial: Device[] }) {
     setRows(initial);
   }
 
-  const set = (i: number, key: keyof Device, value: string) => setRows((r) => r.map((d, j) => (j === i ? { ...d, [key]: value } : d)));
+  const set = (i: number, key: keyof Row, value: string) => setRows((r) => r.map((d, j) => (j === i ? { ...d, [key]: value } : d)));
 
   async function save() {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch("/api/devices", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rows) });
+      const body = rows.map(({ registryId, alias, outputName, sourceHint }) => ({ registryId, alias, outputName, sourceHint }));
+      const res = await fetch("/api/devices", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       setRows(json.devices);
@@ -55,14 +55,14 @@ export function DevicesEditor({ initial }: { initial: Device[] }) {
     <section className="card overflow-hidden">
       <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
         <div>
-          <h2 className="text-[15px] font-semibold">Registry · {rows.length} devices</h2>
-          <p className="text-[12.5px] text-muted">Order here is the order of the quarter summary.</p>
+          <h2 className="text-[15px] font-semibold">Devices · {rows.length}</h2>
+          <p className="text-[12.5px] text-muted">Order here is the order of the quarter summary. Removing a device also deletes its stored hourly data.</p>
         </div>
         <div className="ml-auto flex gap-2">
           {editing ? (
             <>
               <button className="btn btn-sm" onClick={() => setRows((r) => [...r, blank()])}>Add device</button>
-              <button className="btn btn-sm" onClick={() => { setRows(initial); setEditing(false); }} disabled={busy}>Cancel</button>
+              <button className="btn btn-sm" onClick={() => { setRows(initial); setEditing(false); setMsg(null); }} disabled={busy}>Cancel</button>
               <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
             </>
           ) : (
@@ -80,34 +80,46 @@ export function DevicesEditor({ initial }: { initial: Device[] }) {
           <thead>
             <tr>
               <th className="th pl-5">#</th>
-              {COLUMNS.map((c) => (
+              {EDITABLE.map((c) => (
                 <th key={c.key} className={`th whitespace-nowrap ${c.width}`} title={c.hint}>{c.label}</th>
               ))}
+              <th className="th border-l w-[200px] max-w-[200px]" title="irec companies.company_name">Client</th>
+              <th className="th w-[120px]" title="irec devices.htsc_no">meter_id</th>
+              <th className="th w-[250px] max-w-[250px]" title="irec devices.project_description">eac_facility_id</th>
               {editing && <th className="th pr-5" />}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td className="td py-10 text-center text-muted" colSpan={COLUMNS.length + 2}>
-                  No devices yet — import a delivery workbook above.
-                </td>
+                <td className="td py-10 text-center text-muted" colSpan={9}>No devices yet — import a delivery workbook above or add one.</td>
               </tr>
             )}
             {rows.map((d, i) => (
               <tr key={d.id || `new-${i}`} className="hover:bg-surface-2/60">
                 <td className="td num pl-5 text-muted">{i + 1}</td>
-                {COLUMNS.map((c) => (
+                {EDITABLE.map((c) => (
                   <td key={c.key} className={`td ${c.width} ${editing ? "py-1.5" : ""}`}>
-                    {editing ? (
-                      <input className="input h-8 text-[13px]" value={(d[c.key] as string) ?? ""} onChange={(e) => set(i, c.key, e.target.value)} />
+                    {editing && (c.key !== "registryId" || d.isNew) ? (
+                      <input className="input h-8 text-[13px]" value={d[c.key] ?? ""} onChange={(e) => set(i, c.key, e.target.value)} />
                     ) : (
-                      <span className={`block truncate text-[13px] ${c.key === "outputName" ? "font-medium" : c.key === "sourceHint" && !d.sourceHint ? "text-faint" : ""}`} title={(d[c.key] as string) ?? ""}>
-                        {(d[c.key] as string) || "—"}
+                      <span className={`block truncate text-[13px] ${c.key === "outputName" ? "font-medium" : ""} ${!d[c.key] ? "text-faint" : ""}`}>
+                        {d[c.key] || "—"}
                       </span>
                     )}
                   </td>
                 ))}
+                {d.isNew ? (
+                  <td className="td border-l text-[12.5px] text-faint" colSpan={3}>Filled from irec on save</td>
+                ) : !d.inIrec ? (
+                  <td className="td border-l text-[12.5px] text-danger" colSpan={3}>Registry id not found in irec</td>
+                ) : (
+                  <>
+                    <td className="td border-l w-[200px] max-w-[200px]"><span className="block truncate text-[13px] text-muted" title={d.client}>{d.client || "—"}</span></td>
+                    <td className="td num text-[13px] text-muted">{d.meterId || "—"}</td>
+                    <td className="td w-[250px] max-w-[250px]"><span className="block truncate text-[13px] text-muted" title={d.facilityId}>{d.facilityId || "—"}</span></td>
+                  </>
+                )}
                 {editing && (
                   <td className="td pr-5">
                     <button aria-label="Remove device" className="grid size-7 place-items-center rounded-md text-faint hover:bg-danger-soft hover:text-danger" onClick={() => setRows((r) => r.filter((_, j) => j !== i))}>

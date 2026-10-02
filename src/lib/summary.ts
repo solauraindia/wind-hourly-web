@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import type { ActualsSnapshot } from "./actuals/types";
+import type { DeviceActuals } from "./actuals";
 import type { Quarter } from "./quarter";
 import type { Device, HourlyResult } from "./types";
 
@@ -24,9 +24,9 @@ export interface SummaryRow {
 const sum3 = (v: (number | null)[]) => (v.every((x) => x === null) ? null : v.reduce<number>((s, x) => s + (x ?? 0), 0));
 
 /** Mirrors "Sheet1" of the quarterly delivery workbook. */
-export function buildSummary(devices: Device[], results: Record<string, HourlyResult>, actuals: ActualsSnapshot): SummaryRow[] {
+export function buildSummary(devices: Device[], results: Record<string, HourlyResult>, actuals: Record<string, DeviceActuals>): SummaryRow[] {
   return devices.map((d, i) => {
-    const a = actuals.rows[d.registryId];
+    const a = actuals[d.registryId];
     const r = results[d.id];
     const actual = a?.actualMWh ?? [null, null, null];
     const actualTotal = sum3(actual);

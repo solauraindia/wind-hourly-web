@@ -1,24 +1,23 @@
-import { saveLocalActuals } from "@/lib/actuals/local";
-import { mergeDevices, parseDeliveryWorkbook } from "@/lib/importDelivery";
-import { parseQuarter } from "@/lib/quarter";
-import { loadDevices, saveDevices } from "@/lib/repo";
+import { requireApiUser } from "@/lib/auth/server";
+import { appDb, irecDb } from "@/lib/db";
+import { mergeMappings, parseDeliveryMappings } from "@/lib/importDelivery";
+import { irecDevices } from "@/lib/irec";
+import { loadMappings, saveMappings } from "@/lib/store";
 
-/**
- * Import a delivery workbook: device registry fields from "Hourly Files_details"
- * and, when a quarter is given, the actual / eligible / issued figures from Sheet1.
- */
+/** Add/update device mappings from a delivery workbook's "Hourly Files_details" sheet. */
 export async function POST(req: Request) {
-  const form = await req.formData();
-  const file = form.get("file");
+  const user = await requireApiUser();
+  if (user instanceof Response) return user;
+  const file = (await req.formData()).get("file");
   if (!(file instanceof File)) return Response.json({ error: "No file uploaded" }, { status: 400 });
-  const quarter = parseQuarter(String(form.get("quarter") ?? ""));
   try {
-    const parsed = await parseDeliveryWorkbook(new Uint8Array(await file.arrayBuffer()));
-    const merged = mergeDevices(await loadDevices(), parsed.devices);
-    await saveDevices(merged.devices);
-    const actualRows = Object.keys(parsed.actuals).length;
-    if (quarter && actualRows) await saveLocalActuals(quarter, file.name, parsed.actuals);
-    return Response.json({ added: merged.added, updated: merged.updated, actualRows: quarter ? actualRows : 0 });
+    const incoming = await parseDeliveryMappings(new Uint8Array(await file.arrayBuffer()));
+    const known = await irecDevices(irecDb(), incoming.map((m) => m.registryId));
+    const usable = incoming.filter((m) => known.has(m.registryId));
+    const skipped = incoming.filter((m) => !known.has(m.registryId)).map((m) => m.registryId);
+    const merged = mergeMappings(await loadMappings(appDb()), usable);
+    await saveMappings(appDb(), merged.mappings, user.email);
+    return Response.json({ added: merged.added, updated: merged.updated, skipped });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }

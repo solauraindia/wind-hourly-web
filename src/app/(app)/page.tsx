@@ -6,17 +6,19 @@ import { ProcessFlow } from "@/components/ProcessFlow";
 import { Stat } from "@/components/Stat";
 import { mwh, pct, quarterLabel } from "@/lib/format";
 import { quarterFromSearch } from "@/lib/pageQuarter";
-import { loadDevices, loadResults } from "@/lib/repo";
+import { appDb, irecDb } from "@/lib/db";
+import { loadDevices, loadResults } from "@/lib/store";
 import { FORMAT_LABELS } from "@/lib/types";
 
 export default async function ProcessPage({ searchParams }: PageProps<"/">) {
   const quarter = await quarterFromSearch(searchParams);
-  const [devices, results] = await Promise.all([loadDevices(), loadResults(quarter.key)]);
-  const done = devices.filter((d) => results[d.id]);
-  const total = done.reduce((s, d) => s + results[d.id].totalMWh, 0);
-  const hoursQ = done.reduce((s, d) => s + results[d.id].hoursInQuarter, 0);
-  const hoursW = done.reduce((s, d) => s + results[d.id].hoursWritten, 0);
-  const est = done.reduce((s, d) => s + results[d.id].hoursEstimated, 0);
+  const unit = (await searchParams).unit === "kWh" ? "kWh" : "MWh";
+  const [devices, results] = await Promise.all([loadDevices(appDb(), irecDb()), loadResults(appDb(), quarter.key)]);
+  const done = devices.filter((d) => results[d.registryId]);
+  const total = done.reduce((s, d) => s + results[d.registryId].totalMWh, 0);
+  const hoursQ = done.reduce((s, d) => s + results[d.registryId].hoursInQuarter, 0);
+  const hoursW = done.reduce((s, d) => s + results[d.registryId].hoursWritten, 0);
+  const est = done.reduce((s, d) => s + results[d.registryId].hoursEstimated, 0);
 
   return (
     <>
@@ -39,17 +41,32 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
           <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
             <div>
               <h2 className="text-[15px] font-semibold">Hourly files · {quarterLabel(quarter.key)}</h2>
-              <p className="text-[12.5px] text-muted">Values in MWh. Hover a coverage cell for that day&apos;s hours and energy.</p>
+              <p className="text-[12.5px] text-muted">Table in MWh. Files are rendered from the stored hourly values when downloaded.</p>
             </div>
-            {done.length > 0 && (
-              <a className="btn btn-sm ml-auto" href={`/api/bundle/${quarter.key}`}>
-                <IconDownload /> Download all (.zip)
-              </a>
-            )}
+            <div className="ml-auto flex items-center gap-2 text-[13px]">
+              <span className="text-muted">File unit</span>
+              <div className="flex rounded-lg border border-line-strong p-0.5">
+                {(["MWh", "kWh"] as const).map((u) => (
+                  <Link
+                    key={u}
+                    scroll={false}
+                    href={`/?q=${quarter.key}${u === "kWh" ? "&unit=kWh" : ""}`}
+                    className={`rounded-md px-2.5 py-1 text-[12.5px] font-medium ${unit === u ? "bg-accent text-white" : "text-muted hover:text-ink"}`}
+                  >
+                    {u}
+                  </Link>
+                ))}
+              </div>
+              {done.length > 0 && (
+                <a className="btn btn-sm" href={`/api/bundle/${quarter.key}?unit=${unit}`}>
+                  <IconDownload /> Download all (.zip)
+                </a>
+              )}
+            </div>
           </div>
           {devices.length === 0 ? (
             <div className="px-5 py-10 text-center text-sm text-muted">
-              No devices yet. <Link className="font-medium text-accent underline-offset-2 hover:underline" href={`/devices?q=${quarter.key}`}>Import the delivery workbook</Link> to set up the registry.
+              No devices yet. <Link className="font-medium text-accent underline-offset-2 hover:underline" href={`/devices?q=${quarter.key}`}>Add devices</Link> to map raw turbine names to irec devices.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -69,14 +86,14 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
                 </thead>
                 <tbody>
                   {devices.map((d) => {
-                    const r = results[d.id];
+                    const r = results[d.registryId];
                     return (
                       <tr key={d.id} className={r ? "hover:bg-surface-2/60" : "text-faint"}>
                         <td className="td pl-4">
                           <div className="whitespace-nowrap font-medium text-ink">{d.outputName}</div>
-                          <div className="num text-[12px] text-muted">{d.registryId}</div>
+                          <div className="num text-[12px] text-muted">{d.registryId}{!d.inIrec && <span className="ml-1.5 text-danger">· not in irec</span>}</div>
                         </td>
-                        <td className="td" title={r?.sourceName}>
+                        <td className="td" title={r ? `${r.sourceName}\nprocessed ${new Date(r.processedAt).toLocaleString("en-IN")}${r.processedBy ? ` by ${r.processedBy}` : ""}` : undefined}>
                           {r ? (
                             <span className="chip whitespace-nowrap bg-accent-soft text-accent">{FORMAT_LABELS[r.format]}</span>
                           ) : (
@@ -100,7 +117,7 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
                         <td className="td num whitespace-nowrap text-right text-[13px] text-muted">{r ? `${r.hoursEstimated} / ${r.hoursMissing}` : ""}</td>
                         <td className="td pr-4 text-right">
                           {r && (
-                            <a className="btn btn-sm px-2" href={`/api/files/${quarter.key}/${encodeURIComponent(r.fileName)}`} title={`Download ${r.fileName}`} aria-label={`Download ${r.fileName}`}>
+                            <a className="btn btn-sm px-2" href={`/api/files/${quarter.key}/${encodeURIComponent(d.registryId)}?unit=${unit}`} title={`Download ${d.outputName}_hourly_${quarter.compact}.xlsx`} aria-label={`Download ${d.outputName}`}>
                               <IconDownload />
                             </a>
                           )}

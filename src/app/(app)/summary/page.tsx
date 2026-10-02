@@ -1,28 +1,27 @@
-import Link from "next/link";
 import { IconDatabase, IconDownload } from "@/components/Icons";
 import { PageHeader } from "@/components/PageHeader";
 import { Stat } from "@/components/Stat";
-import { getActualsProvider, type ActualsSnapshot } from "@/lib/actuals";
+import type { DeviceActuals } from "@/lib/actuals";
+import { appDb, irecDb } from "@/lib/db";
+import { irecActuals } from "@/lib/irec";
 import { mwh, quarterLabel } from "@/lib/format";
 import { quarterFromSearch } from "@/lib/pageQuarter";
-import { loadDevices, loadResults } from "@/lib/repo";
+import { loadDevices, loadResults } from "@/lib/store";
 import { buildSummary, summaryTotals } from "@/lib/summary";
 
 export default async function SummaryPage({ searchParams }: PageProps<"/summary">) {
   const quarter = await quarterFromSearch(searchParams);
-  const provider = getActualsProvider();
-  const [devices, results] = await Promise.all([loadDevices(), loadResults(quarter.key)]);
-  let actuals: ActualsSnapshot;
+  const [devices, results] = await Promise.all([loadDevices(appDb(), irecDb()), loadResults(appDb(), quarter.key)]);
+  let actuals: Record<string, DeviceActuals> = {};
   let actualsError: string | null = null;
   try {
-    actuals = await provider.getQuarter(quarter);
+    actuals = await irecActuals(irecDb(), quarter, devices.map((d) => d.registryId));
   } catch (e) {
-    actuals = { provider: provider.name, source: null, updatedAt: null, rows: {} };
     actualsError = e instanceof Error ? e.message : String(e);
   }
   const rows = buildSummary(devices, results, actuals);
   const t = summaryTotals(rows);
-  const hasActuals = Object.keys(actuals.rows).length > 0;
+  const withActuals = Object.values(actuals).filter((a) => a.actualMWh.some((v) => v !== null)).length;
   const [m1, m2, m3] = quarter.monthLabels;
 
   return (
@@ -43,27 +42,17 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
             <IconDatabase />
           </span>
           <div>
-            <div className="font-medium">
-              Actuals &amp; eligible credits ·{" "}
-              {provider.name === "cloud" ? "cloud database" : "local snapshot (cloud database not connected yet)"}
-            </div>
+            <div className="font-medium">Actuals, eligible credits &amp; issuances · irec database (read-only, live)</div>
             <div className="mt-0.5 text-muted">
               {actualsError
-                ? actualsError
-                : hasActuals
-                  ? `Loaded ${Object.keys(actuals.rows).length} devices from ${actuals.source ?? "unknown source"}${actuals.updatedAt ? ` · updated ${new Date(actuals.updatedAt).toLocaleString("en-IN")}` : ""}.`
-                  : (
-                    <>
-                      No figures for {quarterLabel(quarter.key)} yet. Import a delivery workbook on the{" "}
-                      <Link className="font-medium text-accent hover:underline" href={`/devices?q=${quarter.key}`}>Devices</Link> page, or connect the cloud database.
-                    </>
-                  )}
+                ? `Could not read irec: ${actualsError}`
+                : `devices_monthly_data has ${quarterLabel(quarter.key)} figures for ${withActuals} of ${devices.length} devices; issued = Σ issuances over the quarter.`}
             </div>
           </div>
         </div>
 
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Stat label="Actual generation" value={`${mwh(t.actualTotal, 1)}`} hint="MWh · from actuals source" />
+          <Stat label="Actual generation" value={`${mwh(t.actualTotal, 1)}`} hint="MWh · irec actual_gen" />
           <Stat label="Hourly statement" value={`${mwh(t.hourlyTotal, 1)}`} hint="MWh · from generated files" />
           <Stat label="Claimable (Σ min)" value={`${mwh(t.min, 1)}`} hint="MWh · min(eligible, hourly)" tone="ok" />
           <Stat label="Issued as per Evident" value={`${mwh(t.issued, 1)}`} hint="MWh" />
@@ -135,7 +124,7 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
           </div>
         </section>
         <p className="text-[12.5px] text-faint">
-          All figures in MWh. Diff = actual total − hourly total (amber when they differ by more than 10%). Min = min(eligible, hourly total). Eligible defaults to the actual total when the source gives none.
+          All figures in MWh. Diff = actual total − hourly total (amber when they differ by more than 10%). Min = min(eligible, hourly total). Eligible = Σ eligible_gen (after banking); it falls back to the actual total when irec has none.
         </p>
       </div>
     </>

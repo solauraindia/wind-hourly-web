@@ -2,8 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, type DragEvent } from "react";
+import { computeHourly } from "@/lib/compute";
 import { day, quarterLabel } from "@/lib/format";
-import { FORMAT_LABELS, type Device, type SeriesInfo } from "@/lib/types";
+import { parseQuarter } from "@/lib/quarter";
+import { suggestDevice } from "@/lib/registry";
+import { FORMAT_LABELS, type Device, type Series, type SeriesInfo } from "@/lib/types";
 import { IconAlert, IconCheck, IconFile, IconFolder, IconUpload, IconX } from "./Icons";
 
 interface Picked {
@@ -12,9 +15,22 @@ interface Picked {
 }
 
 interface Detected {
-  uploadId: string;
   series: SeriesInfo[];
   warnings: { file: string; message: string }[];
+}
+
+function describe(s: Series, devices: Device[]): SeriesInfo {
+  const ts = s.kind === "ten-min" ? s.samples.map((x) => x.ts) : s.hours.map(([t]) => t);
+  return {
+    key: s.key,
+    alias: s.alias,
+    format: s.format,
+    sourceName: s.sourceName,
+    points: ts.length,
+    firstTs: ts.length ? ts[0] : null,
+    lastTs: ts.length ? ts[ts.length - 1] : null,
+    suggestedDeviceId: suggestDevice(s.alias, s.sourceName, devices)?.id ?? null,
+  };
 }
 
 type Phase = "idle" | "detecting" | "mapping" | "processing";
@@ -44,7 +60,9 @@ export function ProcessFlow({ devices, quarter }: { devices: Device[]; quarter: 
   const [phase, setPhase] = useState<Phase>("idle");
   const [detected, setDetected] = useState<Detected | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [unit, setUnit] = useState<"MWh" | "kWh">("MWh");
+  const [progress, setProgress] = useState<string | null>(null);
+  // parsed series stay in the browser; only computed hourly arrays are sent
+  const parsed = useRef<Series[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -84,17 +102,15 @@ export function ProcessFlow({ devices, quarter }: { devices: Device[]; quarter: 
   async function detect() {
     setPhase("detecting");
     setError(null);
-    const form = new FormData();
-    for (const p of picked) {
-      form.append("files", p.file);
-      form.append("paths", p.path);
-    }
     try {
-      const res = await fetch("/api/detect", { method: "POST", body: form });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.statusText);
-      setDetected(json);
-      setMapping(Object.fromEntries((json.series as SeriesInfo[]).map((s) => [s.key, s.suggestedDeviceId ?? ""])));
+      // loaded on demand: the Excel/zip readers are only needed on this step
+      const { detectAndParse } = await import("@/lib/parsers/detect");
+      const inputs = await Promise.all(picked.map(async (p) => ({ name: p.path, data: new Uint8Array(await p.file.arrayBuffer()) })));
+      const { series, warnings } = await detectAndParse(inputs);
+      parsed.current = series;
+      const info = series.map((s) => describe(s, devices)).sort((a, b) => a.sourceName.localeCompare(b.sourceName) || a.alias.localeCompare(b.alias));
+      setDetected({ series: info, warnings });
+      setMapping(Object.fromEntries(info.map((s) => [s.key, s.suggestedDeviceId ?? ""])));
       setPhase("mapping");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -106,29 +122,40 @@ export function ProcessFlow({ devices, quarter }: { devices: Device[]; quarter: 
   const duplicates = new Set(chosen.map(([, d]) => d).filter((d, i, a) => a.indexOf(d) !== i));
 
   async function process() {
-    if (!detected) return;
+    const q = parseQuarter(quarter);
+    if (!detected || !q) return;
     setPhase("processing");
     setError(null);
-    try {
-      const res = await fetch("/api/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uploadId: detected.uploadId, quarter, unit, mappings: chosen.map(([seriesKey, deviceId]) => ({ seriesKey, deviceId })) }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.statusText);
-      const errs = json.errors as { seriesKey: string; message: string }[];
-      const alias = (k: string) => detected.series.find((s) => s.key === k)?.alias ?? k;
-      setNotice(`Generated ${json.results.length} hourly file${json.results.length === 1 ? "" : "s"} for ${quarterLabel(quarter)}.`);
-      if (errs.length) setError(errs.map((e) => `${alias(e.seriesKey)}: ${e.message}`).join(" · "));
+    const errors: string[] = [];
+    let ok = 0;
+    for (const [i, [seriesKey, deviceId]] of chosen.entries()) {
+      const series = parsed.current.find((s) => s.key === seriesKey);
+      const name = devices.find((d) => d.id === deviceId)?.outputName ?? deviceId;
+      if (!series) continue;
+      setProgress(`${i + 1} / ${chosen.length} · ${name}`);
+      try {
+        const res = await fetch("/api/process", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(computeHourly(series, deviceId, q)),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error ?? res.statusText);
+        ok++;
+      } catch (e) {
+        errors.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    setProgress(null);
+    setNotice(ok ? `Saved hourly data for ${ok} device${ok === 1 ? "" : "s"} · ${quarterLabel(quarter)}.` : null);
+    if (errors.length) setError(errors.join(" · "));
+    if (!errors.length) {
       setPicked([]);
       setDetected(null);
+      parsed.current = [];
       setPhase("idle");
-      router.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setPhase("mapping");
-    }
+    } else setPhase("mapping");
+    router.refresh();
   }
 
   const busy = phase === "detecting" || phase === "processing";
@@ -137,20 +164,6 @@ export function ProcessFlow({ devices, quarter }: { devices: Device[]; quarter: 
     <section className="card">
       <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
         <Steps phase={phase} hasFiles={picked.length > 0} />
-        <div className="ml-auto flex items-center gap-2 text-[13px]">
-          <span className="text-muted">Output unit</span>
-          <div className="flex rounded-lg border border-line-strong p-0.5">
-            {(["MWh", "kWh"] as const).map((u) => (
-              <button
-                key={u}
-                onClick={() => setUnit(u)}
-                className={`rounded-md px-2.5 py-1 text-[12.5px] font-medium ${unit === u ? "bg-accent text-white" : "text-muted hover:text-ink"}`}
-              >
-                {u}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div className="space-y-4 p-5">
@@ -225,7 +238,7 @@ export function ProcessFlow({ devices, quarter }: { devices: Device[]; quarter: 
               </span>
             ))}
             <button className="btn btn-primary btn-sm ml-auto" onClick={detect} disabled={busy}>
-              {phase === "detecting" ? "Reading files…" : "Detect layouts"}
+              {phase === "detecting" ? "Reading files in your browser…" : "Detect layouts"}
             </button>
           </div>
         )}
@@ -249,7 +262,7 @@ export function ProcessFlow({ devices, quarter }: { devices: Device[]; quarter: 
               {chosen.length} of {detected.series.length} series mapped · hours outside {quarterLabel(quarter)} are ignored
             </span>
             <button className="btn btn-primary ml-auto" onClick={process} disabled={busy || !chosen.length || duplicates.size > 0}>
-              {phase === "processing" ? "Generating…" : `Generate ${chosen.length} hourly file${chosen.length === 1 ? "" : "s"}`}
+              {phase === "processing" ? `Saving ${progress ?? "…"}` : `Generate ${chosen.length} hourly file${chosen.length === 1 ? "" : "s"}`}
             </button>
           </div>
         )}

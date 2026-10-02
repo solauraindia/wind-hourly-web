@@ -59,29 +59,34 @@ export interface SeriesInfo {
   suggestedDeviceId: string | null;
 }
 
-export interface Device {
-  /** stable slug, e.g. "uthiyur-erw01" */
-  id: string;
+/** App-side mapping for one irec device (table device_mappings). */
+export interface DeviceMapping {
+  /** irec devices.device_meta_id — also the eac_registry_id written to the files */
+  registryId: string;
   /** turbine name as it appears in the raw exports, e.g. "ERW01" */
   alias: string;
   /** output file stem, e.g. "Ottapidaram-ERW01" */
   outputName: string;
   /** case-insensitive substring of the source file/folder name that disambiguates identical aliases */
   sourceHint?: string;
-  site?: string;
+}
+
+/** Mapping joined with irec master data — what the UI and the output files use. */
+export interface Device extends DeviceMapping {
+  /** = registryId; kept as a separate name for readability at call sites */
+  id: string;
   client: string;
   meterId: string;
   facilityId: string;
-  registryId: string;
+  /** false when the registry id no longer exists in irec */
+  inIrec: boolean;
 }
 
 export interface HourlyResult {
-  deviceId: string;
+  registryId: string;
   quarter: string;
   format: SourceFormat;
   sourceName: string;
-  fileName: string;
-  unit: "MWh" | "kWh";
   hoursInQuarter: number;
   hoursWritten: number;
   hoursEstimated: number;
@@ -93,4 +98,5 @@ export interface HourlyResult {
   /** per-day MWh, one entry per quarter day */
   dailyMWh: number[];
   processedAt: string;
+  processedBy: string | null;
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { IconDevices, IconTable, IconTurbine, IconUpload } from "./Icons";
+import { SignOutButton } from "./SignOutButton";
 
 const NAV = [
   { href: "/", label: "Hourly mapping", icon: IconUpload },
@@ -10,7 +11,7 @@ const NAV = [
   { href: "/devices", label: "Devices", icon: IconDevices },
 ];
 
-export function Sidebar() {
+export function Sidebar({ email }: { email: string }) {
   const path = usePathname();
   const q = useSearchParams().get("q");
   return (
@@ -42,10 +43,12 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="mt-auto border-t border-line px-5 py-4 text-[11.5px] leading-relaxed text-faint">
-        Times in Asia/Kolkata (UTC+05:30).
-        <br />
-        Output follows meter-data-template.
+      <div className="mt-auto border-t border-line px-5 py-4">
+        <div className="truncate text-[12.5px] font-medium" title={email}>{email}</div>
+        <div className="mt-1 flex items-center justify-between text-[11.5px] text-faint">
+          <span>Asia/Kolkata · UTC+05:30</span>
+          <SignOutButton compact />
+        </div>
       </div>
     </aside>
   );

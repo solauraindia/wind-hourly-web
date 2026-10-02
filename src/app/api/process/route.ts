@@ -1,54 +1,24 @@
-import { renderHourly, type Unit } from "@/lib/output";
-import { parseQuarter } from "@/lib/quarter";
-import { loadDevices, saveResult } from "@/lib/repo";
-import type { HourlyResult } from "@/lib/types";
-import { getUpload } from "@/lib/uploads";
+import { requireApiUser } from "@/lib/auth/server";
+import type { HourlyPayload } from "@/lib/compute";
+import { appDb } from "@/lib/db";
+import { loadMappings, saveHourly } from "@/lib/store";
 
-export const maxDuration = 300;
-
-interface Body {
-  uploadId: string;
-  quarter: string;
-  unit?: Unit;
-  mappings: { seriesKey: string; deviceId: string }[];
-}
-
-/** Build the template workbook for every mapped series and store it under the quarter. */
+/**
+ * Store one device's hourly statement for a quarter. The browser parses the raw
+ * files and posts only the computed hourly array (~2,200 values), which keeps
+ * requests far below Vercel's 4.5 MB body limit and means raw files are never uploaded.
+ */
 export async function POST(req: Request) {
-  const body = (await req.json()) as Body;
-  const quarter = parseQuarter(body.quarter);
-  if (!quarter) return Response.json({ error: `Invalid quarter '${body.quarter}'` }, { status: 400 });
-  const upload = getUpload(body.uploadId);
-  if (!upload) return Response.json({ error: "Upload expired — please add the files again" }, { status: 410 });
-
-  const mappings = body.mappings.filter((m) => m.deviceId);
-  const seen = new Set<string>();
-  for (const m of mappings) {
-    if (seen.has(m.deviceId)) return Response.json({ error: `Device '${m.deviceId}' is mapped to more than one series` }, { status: 400 });
-    seen.add(m.deviceId);
+  const user = await requireApiUser();
+  if (user instanceof Response) return user;
+  const payload = (await req.json()) as HourlyPayload;
+  const db = appDb();
+  if (!(await loadMappings(db)).some((m) => m.registryId === payload.registryId)) {
+    return Response.json({ error: `Unknown device '${payload.registryId}'` }, { status: 400 });
   }
-
-  const devices = new Map((await loadDevices()).map((d) => [d.id, d]));
-  const results: HourlyResult[] = [];
-  const errors: { seriesKey: string; message: string }[] = [];
-  for (const m of mappings) {
-    const series = upload.series.find((s) => s.key === m.seriesKey);
-    const device = devices.get(m.deviceId);
-    if (!series || !device) {
-      errors.push({ seriesKey: m.seriesKey, message: !series ? "Unknown series" : `Unknown device '${m.deviceId}'` });
-      continue;
-    }
-    try {
-      const { xlsx, result } = await renderHourly(series, device, quarter, body.unit ?? "MWh");
-      if (result.hoursWritten === 0) {
-        errors.push({ seriesKey: m.seriesKey, message: `No data inside ${quarter.key}` });
-        continue;
-      }
-      await saveResult(result, xlsx);
-      results.push(result);
-    } catch (e) {
-      errors.push({ seriesKey: m.seriesKey, message: e instanceof Error ? e.message : String(e) });
-    }
+  try {
+    return Response.json({ result: await saveHourly(db, payload, user.email) });
+  } catch (e) {
+    return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
-  return Response.json({ results, errors });
 }

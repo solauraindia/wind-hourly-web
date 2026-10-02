@@ -2,29 +2,52 @@
 
 Next.js port of `../wind-data-analysis`. It turns raw wind-turbine exports into
 hourly files in the `meter-data-template` layout and builds the quarterly
-delivery summary ("Sheet1").
+delivery summary ("Sheet1"). It is built to run on Vercel.
 
 ```bash
 pnpm install
-pnpm dev          # http://localhost:3000
-pnpm test         # golden checks against the raw files in ~/Downloads/Hourly Raw Files
-pnpm build && pnpm start
+cp .env.example .env     # fill in the values (see below)
+pnpm db:migrate          # create/upgrade the app database tables
+pnpm dev                 # http://localhost:3000
+pnpm test                # golden + database tests (PGlite, no network)
 ```
+
+## How it works
+
+- **Raw files never leave the browser.** The browser reads the uploaded files,
+  zips or folders, works out the hourly values, and posts one compact array per
+  device (about 2,200 numbers). This keeps requests far below Vercel's 4.5 MB
+  body limit.
+- **No files are stored.** Hourly values are saved in the app database
+  (`hourly_values`, with per-run quality details in `hourly_results`). Each
+  `.xlsx`, the zip of all files, and the summary export are built on download,
+  in kWh or MWh.
+- **Device master data, actuals and issuances come live from irec** through a
+  read-only role. The app stores only its mapping from raw turbine names to irec
+  devices (`device_mappings`).
+
+| Output / summary field | Source |
+|---|---|
+| `eac_registry_id` | irec `devices.device_meta_id` |
+| `meter_id` | irec `devices.htsc_no` |
+| `eac_facility_id` | irec `devices.project_description` |
+| Client | irec `companies.company_name` |
+| Actual generation (monthly) | irec `devices_monthly_data.actual_gen` |
+| Eligible credits after banking | Σ irec `devices_monthly_data.eligible_gen` |
+| Issued as per Evident | Σ irec `issuances.issued_units` over the quarter |
+| Hourly statement | this app, `hourly_values` |
 
 ## Workflow
 
-1. **Devices.** Import a delivery workbook such as `Q2 - Delivery_Detailed.xlsx`.
-   The `Hourly Files_details` sheet supplies `meter_id`, `eac_facility_id` and
-   `eac_registry_id`. `Sheet1` supplies client names and, if you want them, that
-   quarter's actual, eligible and issued figures.
-2. **Hourly mapping.** Pick the quarter and drop in raw files, folders or zips.
-   The app works out each file's layout, splits it into one series per turbine
-   and matches each series to a device. Check the matches, then generate. Each
-   file has a `MeterData` sheet (the template) and a `MissingData` sheet listing
-   every missing or estimated hour and the reason.
-3. **Quarter summary.** Shows actual generation, eligible credits, the hourly
-   statement, diff, min and issued for each device. It can be exported to
-   `.xlsx` with live formulas.
+1. **Devices.** Map raw turbine names to irec registry ids, or import a delivery
+   workbook's `Hourly Files_details` sheet.
+2. **Hourly mapping.** Pick the quarter and drop in the raw files. The app works
+   out each file's layout, matches each turbine to a device, and saves the
+   hourly values when you click Generate. Downloads have a `MeterData` sheet
+   (the template) and a `MissingData` sheet listing every missing or estimated
+   hour with its reason.
+3. **Quarter summary.** irec actuals, eligible and issued figures against the
+   hourly statement, with diff and min. Exports to `.xlsx` with live formulas.
 
 ## Supported input layouts (`src/lib/parsers`)
 
@@ -39,16 +62,26 @@ pnpm build && pnpm start
 To support a new vendor export, add a parser that returns `Series[]` and a sniff
 rule in `detect.ts`.
 
-## Actuals source (cloud DB)
+## Environment
 
-The summary reads actual and eligible figures through `ActualsProvider`
-(`src/lib/actuals`). For now `local` reads `data/actuals/<quarter>.json`, which
-is filled by the workbook import. To use the cloud database, set
-`ACTUALS_PROVIDER=cloud` and implement `src/lib/actuals/cloud.ts` once the schema
-and access are known. Nothing else needs to change.
+| Variable | Purpose |
+|---|---|
+| `IREC_DATABASE_URL` | irec Neon database, read-only role |
+| `DATABASE_URL` | app Neon database (pooled connection string) |
+| `NEON_AUTH_BASE_URL` | Neon Auth URL of the app project |
+| `NEON_AUTH_COOKIE_SECRET` | session cookie signing secret, `openssl rand -base64 32` |
+| `ALLOWED_EMAILS` | optional comma-separated allow-list |
 
-## Data
+## Access
 
-Everything is stored under `DATA_DIR` (default `./data`): `devices.json`,
-`actuals/`, and `quarters/<q>/` (results plus generated files). Times are
-Asia/Kolkata (UTC+05:30).
+Neon Auth (managed Better Auth), email + password only. There is no sign-up page
+or social login. `/api/auth` refuses sign-up, social, magic-link and OTP routes,
+and sign-up should also be disabled in the Neon console. Create users in the
+Neon console. All pages and APIs require a session (`src/proxy.ts`, and checked
+again in each route handler).
+
+## Deploying to Vercel
+
+Add the five environment variables, add the deployment domain to Neon Auth's
+trusted origins, and run `pnpm db:migrate` against the app database whenever a
+new file appears in `db/migrations/`. Times are Asia/Kolkata (UTC+05:30).
