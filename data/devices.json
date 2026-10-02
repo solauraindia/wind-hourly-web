@@ -1,0 +1,157 @@
+[
+  {
+    "id": "erw01",
+    "alias": "ERW01",
+    "outputName": "ERW01",
+    "client": "Mothi Spinner Pvt Ltd.",
+    "meterId": "39264392297",
+    "facilityId": "2.7 MW Uthiyur Village, HTSC NO.2297",
+    "registryId": "2.7MES20003"
+  },
+  {
+    "id": "erw02",
+    "alias": "ERW02",
+    "outputName": "ERW02",
+    "client": "Shri Santhosh Meenakshi Textiles Pvt Ltd.",
+    "meterId": "39264392294",
+    "facilityId": "2.7 MW Muthalipalayam Village, HTSC No.2294",
+    "registryId": "2.7MES20004"
+  },
+  {
+    "id": "erw03",
+    "alias": "ERW03",
+    "outputName": "ERW03",
+    "client": "SSMT Power Pvt Ltd.",
+    "meterId": "39264392295",
+    "facilityId": "2.7 MW Aratholuvu Village, HTSC No.2295",
+    "registryId": "2.7MES20005"
+  },
+  {
+    "id": "ottapidaram-erw01",
+    "alias": "ERW01",
+    "outputName": "Ottapidaram-ERW01",
+    "sourceHint": "Ottapidaram",
+    "client": "SSMT GREEN WIND POWER (P) LTD",
+    "meterId": "79264700571",
+    "facilityId": "2.7MW Nedungulam Village HTSC No.0571",
+    "registryId": "2.7MES20012"
+  },
+  {
+    "id": "ottapidaram-erw02",
+    "alias": "ERW02",
+    "outputName": "Ottapidaram-ERW02",
+    "sourceHint": "Ottapidaram",
+    "client": "SSMT GREEN WIND POWER (P) LTD",
+    "meterId": "79264700572",
+    "facilityId": "2.7MW Nedungulam Village HTSC No.0572",
+    "registryId": "2.7MES20013"
+  },
+  {
+    "id": "rsmkp-01",
+    "alias": "RSMKP-01",
+    "outputName": "RSMKP-01",
+    "client": "Rajaguru Spinning Mills Pvt Ltd",
+    "meterId": "59244760160",
+    "facilityId": "1.5 MW Seepalakottai Village, HTSC No. 160",
+    "registryId": "1.5MWIND019"
+  },
+  {
+    "id": "rsmkp-02",
+    "alias": "RSMKP-02",
+    "outputName": "RSMKP-02",
+    "client": "Rajaguru Spinning Mills Pvt Ltd",
+    "meterId": "59244760159",
+    "facilityId": "1.5 MW Seepalakottai Village, HTSC No. 159",
+    "registryId": "1.5MWIND018"
+  },
+  {
+    "id": "rsmkp-03",
+    "alias": "RSMKP-03",
+    "outputName": "RSMKP-03",
+    "client": "Rajaguru Spinning Mills Pvt Ltd",
+    "meterId": "59244760158",
+    "facilityId": "1.5 MW Seepalakottai Village, HTSC No. 0158",
+    "registryId": "1.5MWIND017"
+  },
+  {
+    "id": "rsmkp-04",
+    "alias": "RSMKP-04",
+    "outputName": "RSMKP-04",
+    "client": "Rajaguru Spinning Mills Pvt Ltd",
+    "meterId": "59244760157",
+    "facilityId": "1.5 MW at Seepalakottai Village, HTSC No. 0157",
+    "registryId": "1.5MWIND016"
+  },
+  {
+    "id": "rsmkp-05",
+    "alias": "RSMKP-05",
+    "outputName": "RSMKP-05",
+    "client": "Rajaguru Spinning Mills Pvt Ltd",
+    "meterId": "59244760465",
+    "facilityId": "1.5MW at Seepalakottai Village, HTSC 0465",
+    "registryId": "1.5MWIND020"
+  },
+  {
+    "id": "rsmkp-06",
+    "alias": "RSMKP-06",
+    "outputName": "RSMKP-06",
+    "client": "Rajaguru Spinning Mills Pvt Ltd",
+    "meterId": "59254760467",
+    "facilityId": "1.5MW at Jangalpatti Village, HTSC 0467",
+    "registryId": "1.5MWIND021"
+  },
+  {
+    "id": "kys060",
+    "alias": "KYS060",
+    "outputName": "KYS060",
+    "client": "JPP Mills Pvt Ltd.",
+    "meterId": "79264724580",
+    "facilityId": "2.1MW Pirancheri Village, HTSC No.4580",
+    "registryId": "2.1MES20005"
+  },
+  {
+    "id": "nvl137",
+    "alias": "NVL137",
+    "outputName": "NVL137",
+    "client": "JPP Mills Pvt Ltd",
+    "meterId": "79244724412",
+    "facilityId": "2.1MW Usilankulam Village, HTSC No.4412",
+    "registryId": "2.1MWIND020"
+  },
+  {
+    "id": "nvl242",
+    "alias": "NVL242",
+    "outputName": "NVL242",
+    "client": "Space Textiles (P) Ltd.",
+    "meterId": "79244724343",
+    "facilityId": "2.1 MW Thadiyampatti Village, HTSC No. 4343",
+    "registryId": "2.1MWIND007"
+  },
+  {
+    "id": "smtkp-01",
+    "alias": "SMTKP-01",
+    "outputName": "SMTKP-01",
+    "client": "Shri Santhosh Meenakshi Textiles (P) Ltd.,",
+    "meterId": "59244760173",
+    "facilityId": "1.5MW Odaipatti Village, HTSC No. 0173",
+    "registryId": "1.5MWIND022"
+  },
+  {
+    "id": "smtkp-02",
+    "alias": "SMTKP-02",
+    "outputName": "SMTKP-02",
+    "client": "Shri Santhosh Meenakshi Textiles (P) Ltd.,",
+    "meterId": "59244760177",
+    "facilityId": "1.5MW Odaipatti Village, HTSC No. 0177",
+    "registryId": "1.5MWIND023"
+  },
+  {
+    "id": "smtkp-03",
+    "alias": "SMTKP-03",
+    "outputName": "SMTKP-03",
+    "client": "Shri Santhosh Meenakshi Textiles (P) Ltd.,",
+    "meterId": "59244760184",
+    "facilityId": "1.5MW Odaipatti Village, HTSC No. 0184",
+    "registryId": "1.5MWIND024"
+  }
+]
