@@ -16,9 +16,11 @@ const EDITABLE: { key: "registryId" | "alias" | "sourceHint" | "outputName"; lab
 
 const blank = (): Row => ({ id: "", registryId: "", alias: "", outputName: "", client: "", meterId: "", facilityId: "", inIrec: false, isNew: true });
 
-export function DevicesEditor({ initial, version }: { initial: Device[]; version: string }) {
+export function DevicesEditor({ initial, version: initialVersion, irecUnavailable }: { initial: Device[]; version: string; irecUnavailable: boolean }) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(initial);
+  // the table fingerprint the next save is checked against; refreshed by every successful save
+  const [version, setVersion] = useState(initialVersion);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -28,6 +30,7 @@ export function DevicesEditor({ initial, version }: { initial: Device[]; version
   if (seen !== initial && !editing) {
     setSeen(initial);
     setRows(initial);
+    setVersion(initialVersion);
   }
 
   const set = (i: number, key: keyof Row, value: string) => setRows((r) => r.map((d, j) => (j === i ? { ...d, [key]: value } : d)));
@@ -54,6 +57,7 @@ export function DevicesEditor({ initial, version }: { initial: Device[]; version
       }
       if (!res.ok) throw new Error(json.error);
       setRows(json.devices);
+      setVersion(json.version);
       setEditing(false);
       setMsg({ ok: true, text: `Saved ${json.devices.length} devices.` });
       router.refresh();
@@ -124,6 +128,8 @@ export function DevicesEditor({ initial, version }: { initial: Device[]; version
                 ))}
                 {d.isNew ? (
                   <td className="td border-l text-[12.5px] text-faint" colSpan={3}>Filled from irec on save</td>
+                ) : irecUnavailable ? (
+                  <td className="td border-l text-[12.5px] text-warn" colSpan={3}>irec unavailable</td>
                 ) : !d.inIrec ? (
                   <td className="td border-l text-[12.5px] text-danger" colSpan={3}>Registry id not found in irec</td>
                 ) : (

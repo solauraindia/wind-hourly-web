@@ -23,6 +23,9 @@ export interface HourlyPayload {
   gaps: [number, number, number][];
 }
 
+/** Long zip/file names are kept for reference but capped. */
+export const SOURCE_NAME_MAX = 200;
+
 export const quarterHours = (q: Quarter) => Math.round((q.end - q.start) / HOUR);
 
 /** kWh are stored with 3 decimals; MWh output then has exactly 6. */
@@ -49,7 +52,7 @@ export function computeHourly(series: Series, registryId: string, quarter: Quart
     registryId,
     quarter: quarter.key,
     format: series.format,
-    sourceName: series.sourceName,
+    sourceName: series.sourceName.slice(0, SOURCE_NAME_MAX),
     kwh,
     estimated,
     missing,

@@ -75,5 +75,7 @@ export function cleanMappings(input: unknown): DeviceMapping[] | string {
 /** RFC 6266 attachment header: ASCII fallback plus the exact UTF-8 name. */
 export function contentDisposition(fileName: string): string {
   const ascii = fileName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\;]/g, "_");
-  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+  // RFC 5987 attr-chars: encodeURIComponent leaves '()*! unescaped, so escape them too
+  const ext = encodeURIComponent(fileName).replace(/['()*!]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${ext}`;
 }

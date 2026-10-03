@@ -3,6 +3,19 @@ import type { DeviceActuals } from "./actuals";
 import type { Db } from "./db";
 import type { Quarter } from "./quarter";
 
+/** irec could not be queried (paused project, network, credentials). Routes answer 503. */
+export class IrecUnavailableError extends Error {}
+
+async function irecQuery<T>(db: Db, text: string, params: unknown[]): Promise<T[]> {
+  try {
+    return await db.query<T>(text, params);
+  } catch (e) {
+    throw new IrecUnavailableError(`irec database unavailable: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export const irecUnavailableResponse = (e: IrecUnavailableError) => Response.json({ error: e.message }, { status: 503 });
+
 /**
  * One irec device per registry id. device_meta_id is not declared unique in
  * irec; should it ever repeat (e.g. a re-registered device), prefer the Active
@@ -25,7 +38,7 @@ export interface IrecDevice {
 }
 
 export async function irecDevices(db: Db, registryIds: string[]): Promise<Map<string, IrecDevice>> {
-  const rows = await db.query<{
+  const rows = await irecQuery<{
     registry_id: string;
     meter_id: string | null;
     facility_id: string | null;
@@ -33,6 +46,7 @@ export async function irecDevices(db: Db, registryIds: string[]): Promise<Map<st
     capacity: number | null;
     status: string | null;
   }>(
+    db,
     `SELECT d.device_meta_id AS registry_id, d.htsc_no AS meter_id, d.project_description AS facility_id,
             c.company_name AS client, d.project_capacity AS capacity, d.status
        FROM (${DEVICE_PER_REGISTRY_ID}) d
@@ -62,7 +76,8 @@ const period = (y: number, m: number) => y * 100 + m;
  */
 export async function irecActuals(db: Db, quarter: Quarter, registryIds: string[]): Promise<Record<string, DeviceActuals>> {
   const periods = quarter.months.map(([y, m]) => period(y, m));
-  const rows = await db.query<{ registry_id: string; period: number; actual: string | null; eligible: string | null; issued: string | null }>(
+  const rows = await irecQuery<{ registry_id: string; period: number; actual: string | null; eligible: string | null; issued: string | null }>(
+    db,
     `WITH p AS (SELECT unnest($2::int[]) AS period),
           dev AS (SELECT device_id, device_meta_id FROM (${DEVICE_PER_REGISTRY_ID}) d),
           iss AS (SELECT device_id, period, SUM(issued_units) AS issued

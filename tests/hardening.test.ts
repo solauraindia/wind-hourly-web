@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceActuals } from "@/lib/actuals";
 import { computeHourly, quarterHours, type HourlyPayload } from "@/lib/compute";
-import { irecActuals, irecDevices } from "@/lib/irec";
+import { IrecUnavailableError, irecActuals, irecDevices, irecUnavailableResponse } from "@/lib/irec";
 import { defaultQuarterKey, parseQuarter, recentQuarters } from "@/lib/quarter";
 import {
   StaleMappingsError, deletionImpact, loadDevicesSafe, loadMappings, mappingsVersion, saveHourly, saveMappings, validatePayload,
@@ -11,8 +11,7 @@ import { buildSummary, summaryTotals } from "@/lib/summary";
 import type { Db } from "@/lib/db";
 import type { Device, HourlyResult } from "@/lib/types";
 import { cleanMapping, cleanMappings, contentDisposition, isAllowed, isAllowedAuthPath } from "@/lib/validate";
-import { irecFixture } from "./db.test";
-import { appTestDb } from "./support/pglite";
+import { appTestDb, irecFixture } from "./support/pglite";
 
 const q2 = parseQuarter("2026-Q2")!;
 const n = quarterHours(q2);
@@ -50,7 +49,8 @@ describe("ALLOWED_EMAILS fails closed", () => {
     process.env.ALLOWED_EMAILS = " Ops@SolauraPower.com , x@y.in";
     expect(isAllowed("ops@solaurapower.com")).toBe(true);
     expect(isAllowed("other@solaurapower.com")).toBe(false);
-    process.env.ALLOWED_EMAILS = prev;
+    if (prev === undefined) delete process.env.ALLOWED_EMAILS;
+    else process.env.ALLOWED_EMAILS = prev;
   });
 });
 
@@ -71,6 +71,7 @@ describe("output names and headers", () => {
     const cd = contentDisposition("RSMKP–04 \"x\"_hourly.xlsx");
     expect(() => new Headers({ "Content-Disposition": cd })).not.toThrow();
     expect(cd).toContain("filename*=UTF-8''RSMKP%E2%80%9304");
+    expect(contentDisposition("a'(b)*!.xlsx")).toContain("filename*=UTF-8''a%27%28b%29%2A%21.xlsx");
   });
 });
 
@@ -87,10 +88,13 @@ describe("payload validation", () => {
     ["estimated hour without value", { estimated: [5] }, /no value/],
     ["missing list disagrees", { missing: [] }, /do not match/],
     ["missing list extra", { missing: [[5, "a"], [6, "b"]] as [number, string][] }, /do not match/],
-    ["huge source name", { sourceName: "x".repeat(201) }, /source name/],
+    ["empty source name", { sourceName: "  " }, /source name/],
     ["no registry id", { registryId: "" }, /registry/],
   ])("rejects %s", (_, over, err) => {
     expect(() => validatePayload(payload(over as Partial<HourlyPayload>))).toThrow(err);
+  });
+  it("caps a long source name instead of rejecting", () => {
+    expect(validatePayload(payload({ sourceName: "x".repeat(500) })).payload.sourceName).toHaveLength(200);
   });
   it("browser-computed payloads always pass", async () => {
     const series = { kind: "hourly" as const, key: "k", alias: "A", format: "hourly-long" as const, sourceName: "f", hours: [[q2.start + 3_600_000, 5.5]] as [number, number][], blankHours: [] };
@@ -106,6 +110,13 @@ describe("device mapping saves", () => {
     await saveMappings(db, all, "a@x.in", v); // someone else saves first
     await expect(saveMappings(db, all.slice(1), "b@x.in", v)).rejects.toBeInstanceOf(StaleMappingsError);
     expect(await loadMappings(db)).toHaveLength(17);
+  });
+  it("the version fingerprint ignores the session timezone", async () => {
+    const db = await appTestDb();
+    await db.pg.exec("SET TimeZone = 'UTC'");
+    const utc = await mappingsVersion(db);
+    await db.pg.exec("SET TimeZone = 'Asia/Kolkata'");
+    expect(await mappingsVersion(db)).toBe(utc);
   });
   it("swapping two output names in one save works", async () => {
     const db = await appTestDb();
@@ -137,6 +148,12 @@ describe("irec", () => {
     expect(a["1.5MWIND016"].actualMWh[0]).toBe(109.061);
     expect(a["1.5MWIND016"].eligibleMWh).toBeCloseTo(1003.091, 6);
     expect((await irecDevices(irec, ["1.5MWIND016"])).get("1.5MWIND016")!.meterId).toBe("59244760157");
+  });
+  it("irec failures surface as IrecUnavailableError (routes answer 503)", async () => {
+    const down: Db = { query: async () => { throw new Error("endpoint is disabled"); }, transaction: async () => {} };
+    await expect(irecDevices(down, ["X"])).rejects.toBeInstanceOf(IrecUnavailableError);
+    await expect(irecActuals(down, q2, ["X"])).rejects.toBeInstanceOf(IrecUnavailableError);
+    expect(irecUnavailableResponse(new IrecUnavailableError("x")).status).toBe(503);
   });
   it("pages keep working when irec is down", async () => {
     const app = await appTestDb();

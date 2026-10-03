@@ -1,6 +1,6 @@
 import { requireApiUser } from "@/lib/auth/server";
 import { appDb, irecDb } from "@/lib/db";
-import { irecDevices } from "@/lib/irec";
+import { IrecUnavailableError, irecDevices, irecUnavailableResponse } from "@/lib/irec";
 import { StaleMappingsError, deletionImpact, loadDevices, mappingsVersion, saveMappings } from "@/lib/store";
 import { cleanMappings } from "@/lib/validate";
 
@@ -13,7 +13,7 @@ interface Body {
 }
 
 /** Replace the device mappings (the Devices page saves the whole table, in order). */
-export async function PUT(req: Request) {
+async function handle(req: Request) {
   const user = await requireApiUser();
   if (user instanceof Response) return user;
   const body = (await req.json().catch(() => null)) as Body | null;
@@ -43,4 +43,13 @@ export async function PUT(req: Request) {
   }
   const [devices, version] = await Promise.all([loadDevices(db, irecDb()), mappingsVersion(db)]);
   return Response.json({ devices, version });
+}
+
+export async function PUT(req: Request) {
+  try {
+    return await handle(req);
+  } catch (e) {
+    if (e instanceof IrecUnavailableError) return irecUnavailableResponse(e);
+    throw e;
+  }
 }

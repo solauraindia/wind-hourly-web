@@ -1,7 +1,7 @@
 import { requireApiUser } from "@/lib/auth/server";
 import { appDb, irecDb } from "@/lib/db";
 import { mergeMappings, parseDeliveryMappings } from "@/lib/importDelivery";
-import { irecDevices } from "@/lib/irec";
+import { IrecUnavailableError, irecDevices, irecUnavailableResponse } from "@/lib/irec";
 import { loadMappings, mappingsVersion, saveMappings } from "@/lib/store";
 import { cleanMapping } from "@/lib/validate";
 
@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     await saveMappings(db, merged.mappings, user.email, version);
     return Response.json({ added: merged.added, updated: merged.updated, skipped });
   } catch (e) {
+    if (e instanceof IrecUnavailableError) return irecUnavailableResponse(e);
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

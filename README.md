@@ -70,14 +70,16 @@ rule in `detect.ts`.
 | `DATABASE_URL` | app Neon database (pooled connection string) |
 | `NEON_AUTH_BASE_URL` | Neon Auth URL of the app project |
 | `NEON_AUTH_COOKIE_SECRET` | session cookie signing secret, `openssl rand -base64 32` |
-| `ALLOWED_EMAILS` | optional comma-separated allow-list |
+| `ALLOWED_EMAILS` | required comma-separated allow-list (empty = nobody can sign in) |
 
 ## Access
 
 Neon Auth (managed Better Auth), email + password only. There is no sign-up page
 or social login. `/api/auth` refuses sign-up, social, magic-link and OTP routes,
 and sign-up should also be disabled in the Neon console. Create users in the
-Neon console. All pages and APIs require a session (`src/proxy.ts`, and checked
+Neon console; passwords are also reset there (the app has no reset flow).
+Only accounts listed in `ALLOWED_EMAILS` get in; an empty list admits nobody.
+All pages and APIs require a session (`src/proxy.ts`, and checked
 again in each route handler).
 
 ## Deploying to Vercel

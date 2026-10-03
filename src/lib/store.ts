@@ -1,6 +1,6 @@
 import "server-only";
 import { MAX_HOURLY_KWH } from "./hourly";
-import { quarterHours, round3, type HourlyPayload } from "./compute";
+import { SOURCE_NAME_MAX, quarterHours, round3, type HourlyPayload } from "./compute";
 import type { Db } from "./db";
 import { irecDevices, type IrecDevice } from "./irec";
 import { monthIndexInQuarter, parseQuarter, type Quarter } from "./quarter";
@@ -74,6 +74,9 @@ export async function saveMappings(db: Db, mappings: DeviceMapping[], user: stri
   const ids = mappings.map((m) => m.registryId);
   try {
     await db.transaction([
+      // Serialise saves: a concurrent save waits here, then its version check
+      // sees the committed change and fails instead of silently overwriting it.
+      { text: "LOCK TABLE device_mappings IN SHARE ROW EXCLUSIVE MODE" },
       { text: "SELECT assert_device_mappings_version($1)", params: [expectedVersion] },
       { text: "DELETE FROM device_mappings WHERE NOT (registry_id = ANY($1::text[]))", params: [ids] },
       {
@@ -104,7 +107,7 @@ export async function saveMappings(db: Db, mappings: DeviceMapping[], user: stri
 
 /**
  * Reject anything that could not have come from computeHourly and return a
- * normalised copy: kWh rounded to 3 decimals, `estimated` ⊆ hours with a value,
+ * normalised copy: kWh rounded to 3 decimals, source name capped at 200 chars, `estimated` ⊆ hours with a value,
  * `missing` = exactly the hours without one, gaps inside the quarter.
  */
 export function validatePayload(input: HourlyPayload): { payload: HourlyPayload; quarter: Quarter } {
@@ -113,7 +116,7 @@ export function validatePayload(input: HourlyPayload): { payload: HourlyPayload;
   if (!quarter) throw new Error(`invalid quarter '${p.quarter}'`);
   if (typeof p.registryId !== "string" || !p.registryId || p.registryId.length > 40) throw new Error("invalid registry id");
   if (typeof p.format !== "string" || !Object.hasOwn(FORMAT_LABELS, p.format)) throw new Error(`unknown format '${p.format}'`);
-  if (typeof p.sourceName !== "string" || !p.sourceName.trim() || p.sourceName.length > 200) throw new Error("source name must be 1–200 characters");
+  if (typeof p.sourceName !== "string" || !p.sourceName.trim()) throw new Error("source name is required");
   const n = quarterHours(quarter);
   if (!Array.isArray(p.kwh) || p.kwh.length !== n) throw new Error(`expected ${n} hourly values`);
   const kwh = p.kwh.map((v) => {
@@ -145,7 +148,7 @@ export function validatePayload(input: HourlyPayload): { payload: HourlyPayload;
   }
   return {
     quarter,
-    payload: { registryId: p.registryId, quarter: quarter.key, format: p.format as HourlyPayload["format"], sourceName: p.sourceName.trim(), kwh, estimated, missing, gaps: p.gaps },
+    payload: { registryId: p.registryId, quarter: quarter.key, format: p.format as HourlyPayload["format"], sourceName: p.sourceName.trim().slice(0, SOURCE_NAME_MAX), kwh, estimated, missing, gaps: p.gaps },
   };
 }
 

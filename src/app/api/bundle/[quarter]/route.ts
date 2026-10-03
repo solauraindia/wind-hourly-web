@@ -1,5 +1,6 @@
 import { zipSync } from "fflate";
 import { requireApiUser } from "@/lib/auth/server";
+import { IrecUnavailableError, irecUnavailableResponse } from "@/lib/irec";
 import { contentDisposition } from "@/lib/validate";
 import { appDb, irecDb } from "@/lib/db";
 import { outputFileName, renderMeterXlsx } from "@/lib/output";
@@ -9,7 +10,7 @@ import { loadDevices, loadHourly, loadResults } from "@/lib/store";
 export const maxDuration = 60;
 
 /** Every hourly file of the quarter, rendered on demand, in one zip. ?unit=MWh|kWh */
-export async function GET(req: Request, ctx: RouteContext<"/api/bundle/[quarter]">) {
+async function handle(req: Request, ctx: RouteContext<"/api/bundle/[quarter]">) {
   const user = await requireApiUser();
   if (user instanceof Response) return user;
   const quarter = parseQuarter((await ctx.params).quarter);
@@ -29,4 +30,13 @@ export async function GET(req: Request, ctx: RouteContext<"/api/bundle/[quarter]
       "Content-Disposition": contentDisposition(`hourly_${quarter.compact}.zip`),
     },
   });
+}
+
+export async function GET(req: Request, ctx: RouteContext<"/api/bundle/[quarter]">) {
+  try {
+    return await handle(req, ctx);
+  } catch (e) {
+    if (e instanceof IrecUnavailableError) return irecUnavailableResponse(e);
+    throw e;
+  }
 }

@@ -19,7 +19,7 @@ export default async function DevicesPage({ searchParams }: PageProps<"/devices"
       <div className="mx-auto max-w-[1400px] space-y-6 px-6 py-6">
         <IrecBanner error={irecError} />
         <ImportWorkbook />
-        <DevicesEditor initial={devices} version={version} />
+        <DevicesEditor initial={devices} version={version} irecUnavailable={!!irecError} />
       </div>
     </>
   );

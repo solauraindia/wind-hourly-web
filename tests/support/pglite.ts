@@ -34,3 +34,18 @@ CREATE TABLE devices_monthly_data (device_id int REFERENCES devices(device_id), 
 CREATE TABLE issuances (issuance_id serial PRIMARY KEY, device_id int NOT NULL REFERENCES devices(device_id),
   period int NOT NULL, issued_units numeric(15,6) NOT NULL);
 `;
+
+/** irec with two of the Q2 devices and a few months of actuals/issuances. */
+export async function irecFixture() {
+  return memoryDb(`${IREC_SCHEMA}
+    INSERT INTO companies (company_name) VALUES ('Rajaguru Spinning Mills Pvt Ltd'), ('Mothi Spinner Pvt Ltd');
+    INSERT INTO devices (device_meta_id, project_description, project_capacity, htsc_no, status, company_id) VALUES
+      ('1.5MWIND016', '1.5 MW at Seepalakottai Village, HTSC 0157', 1.5, '59244760157', 'Active', 1),
+      ('2.7MES20003', '2.7 MW Uthiyur Village, HTSC No.2297', 2.7, '39264392297', 'Active', 2);
+    INSERT INTO devices_monthly_data (device_id, period, actual_gen, eligible_gen) VALUES
+      (1, 202604, 109.061, 109.061), (1, 202605, 382.025, 382.025), (1, 202606, 708.754, 512.005),
+      (1, 202603, 99, 99);
+    INSERT INTO issuances (device_id, period, issued_units) VALUES
+      (1, 202604, 100), (1, 202604, 9.061), (1, 202606, 512.005), (1, 202603, 77);
+  `);
+}

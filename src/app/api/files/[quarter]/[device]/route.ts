@@ -1,4 +1,5 @@
 import { requireApiUser } from "@/lib/auth/server";
+import { IrecUnavailableError, irecUnavailableResponse } from "@/lib/irec";
 import { appDb, irecDb } from "@/lib/db";
 import { outputFileName, renderMeterXlsx } from "@/lib/output";
 import { parseQuarter } from "@/lib/quarter";
@@ -6,7 +7,7 @@ import { loadDevices, loadHourly } from "@/lib/store";
 import { contentDisposition } from "@/lib/validate";
 
 /** Render one hourly file on demand from the stored values. ?unit=MWh|kWh */
-export async function GET(req: Request, ctx: RouteContext<"/api/files/[quarter]/[device]">) {
+async function handle(req: Request, ctx: RouteContext<"/api/files/[quarter]/[device]">) {
   const user = await requireApiUser();
   if (user instanceof Response) return user;
   const params = await ctx.params;
@@ -24,4 +25,13 @@ export async function GET(req: Request, ctx: RouteContext<"/api/files/[quarter]/
       "Content-Disposition": contentDisposition(name),
     },
   });
+}
+
+export async function GET(req: Request, ctx: RouteContext<"/api/files/[quarter]/[device]">) {
+  try {
+    return await handle(req, ctx);
+  } catch (e) {
+    if (e instanceof IrecUnavailableError) return irecUnavailableResponse(e);
+    throw e;
+  }
 }
