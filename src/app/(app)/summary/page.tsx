@@ -6,15 +6,15 @@ import { appDb, irecDb } from "@/lib/db";
 import { irecActuals } from "@/lib/irec";
 import { mwh, quarterLabel } from "@/lib/format";
 import { quarterFromSearch } from "@/lib/pageQuarter";
-import { loadDevices, loadResults } from "@/lib/store";
+import { loadDevicesSafe, loadResults } from "@/lib/store";
 import { buildSummary, summaryTotals } from "@/lib/summary";
 
 export default async function SummaryPage({ searchParams }: PageProps<"/summary">) {
   const quarter = await quarterFromSearch(searchParams);
-  const [devices, results] = await Promise.all([loadDevices(appDb(), irecDb()), loadResults(appDb(), quarter.key)]);
+  const [{ devices, irecError }, results] = await Promise.all([loadDevicesSafe(appDb(), irecDb()), loadResults(appDb(), quarter.key)]);
   let actuals: Record<string, DeviceActuals> = {};
-  let actualsError: string | null = null;
-  try {
+  let actualsError: string | null = irecError;
+  if (!irecError) try {
     actuals = await irecActuals(irecDb(), quarter, devices.map((d) => d.registryId));
   } catch (e) {
     actualsError = e instanceof Error ? e.message : String(e);

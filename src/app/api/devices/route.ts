@@ -1,34 +1,46 @@
 import { requireApiUser } from "@/lib/auth/server";
 import { appDb, irecDb } from "@/lib/db";
 import { irecDevices } from "@/lib/irec";
-import { loadDevices, saveMappings } from "@/lib/store";
-import type { DeviceMapping } from "@/lib/types";
+import { StaleMappingsError, deletionImpact, loadDevices, mappingsVersion, saveMappings } from "@/lib/store";
+import { cleanMappings } from "@/lib/validate";
+
+interface Body {
+  /** device_mappings_version() the editor loaded; the save fails if it changed */
+  version: string;
+  devices: unknown;
+  /** registry ids whose stored hourly data the user agreed to delete */
+  confirmDelete?: string[];
+}
 
 /** Replace the device mappings (the Devices page saves the whole table, in order). */
 export async function PUT(req: Request) {
   const user = await requireApiUser();
   if (user instanceof Response) return user;
-  const body = (await req.json()) as DeviceMapping[];
-  if (!Array.isArray(body)) return Response.json({ error: "Expected an array of devices" }, { status: 400 });
-  const mappings = body
-    .map((d) => ({
-      registryId: String(d.registryId ?? "").trim(),
-      alias: String(d.alias ?? "").trim(),
-      outputName: String(d.outputName ?? "").trim() || String(d.alias ?? "").trim(),
-      sourceHint: String(d.sourceHint ?? "").trim() || undefined,
-    }))
-    .filter((d) => d.registryId);
-  for (const key of ["registryId", "outputName"] as const) {
-    const seen = new Set<string>();
-    for (const m of mappings) {
-      if (!m.alias) return Response.json({ error: `${m.registryId}: raw alias is required` }, { status: 400 });
-      if (seen.has(m[key])) return Response.json({ error: `Duplicate ${key === "registryId" ? "registry id" : "output name"} '${m[key]}'` }, { status: 400 });
-      seen.add(m[key]);
-    }
-  }
+  const body = (await req.json().catch(() => null)) as Body | null;
+  if (!body || typeof body.version !== "string") return Response.json({ error: "Missing table version — reload the page" }, { status: 400 });
+  const mappings = cleanMappings(body.devices);
+  if (typeof mappings === "string") return Response.json({ error: mappings }, { status: 400 });
+
   const known = await irecDevices(irecDb(), mappings.map((m) => m.registryId));
   const unknown = mappings.filter((m) => !known.has(m.registryId)).map((m) => m.registryId);
   if (unknown.length) return Response.json({ error: `Not found in irec: ${unknown.join(", ")}` }, { status: 400 });
-  await saveMappings(appDb(), mappings, user.email);
-  return Response.json({ devices: await loadDevices(appDb(), irecDb()) });
+
+  const db = appDb();
+  if ((await mappingsVersion(db)) !== body.version) {
+    return Response.json({ error: "Devices were changed elsewhere since this page loaded — reload and try again." }, { status: 409 });
+  }
+  // removing a device deletes its hourly data in every quarter: require explicit confirmation
+  const impact = await deletionImpact(db, mappings.map((m) => m.registryId));
+  const confirmed = new Set(body.confirmDelete ?? []);
+  const unconfirmed = impact.filter((d) => !confirmed.has(d.registryId));
+  if (unconfirmed.length) return Response.json({ needsConfirmation: unconfirmed }, { status: 409 });
+
+  try {
+    await saveMappings(db, mappings, user.email, body.version);
+  } catch (e) {
+    const status = e instanceof StaleMappingsError ? 409 : 400;
+    return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status });
+  }
+  const [devices, version] = await Promise.all([loadDevices(db, irecDb()), mappingsVersion(db)]);
+  return Response.json({ devices, version });
 }

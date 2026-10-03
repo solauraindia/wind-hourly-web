@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { SignOutButton } from "@/components/SignOutButton";
-import { auth, isAllowed } from "@/lib/auth/server";
+import { allowedEmails, auth, isAllowed } from "@/lib/auth/server";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   await connection(); // per-request: reads the session cookie
@@ -14,7 +14,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     return (
       <div className="m-auto max-w-sm px-6 text-center">
         <h1 className="text-lg font-semibold">No access</h1>
-        <p className="mt-2 text-sm text-muted">{user.email} is not allowed to use this workspace.</p>
+        <p className="mt-2 text-sm text-muted">
+          {allowedEmails().length === 0
+            ? "ALLOWED_EMAILS is not configured, so no account can use this workspace yet."
+            : `${user.email} is not allowed to use this workspace.`}
+        </p>
         <div className="mt-5 flex justify-center">
           <SignOutButton />
         </div>

@@ -7,13 +7,14 @@ import { Stat } from "@/components/Stat";
 import { mwh, pct, quarterLabel } from "@/lib/format";
 import { quarterFromSearch } from "@/lib/pageQuarter";
 import { appDb, irecDb } from "@/lib/db";
-import { loadDevices, loadResults } from "@/lib/store";
+import { loadDevicesSafe, loadResults } from "@/lib/store";
+import { IrecBanner } from "@/components/IrecBanner";
 import { FORMAT_LABELS } from "@/lib/types";
 
 export default async function ProcessPage({ searchParams }: PageProps<"/">) {
   const quarter = await quarterFromSearch(searchParams);
   const unit = (await searchParams).unit === "kWh" ? "kWh" : "MWh";
-  const [devices, results] = await Promise.all([loadDevices(appDb(), irecDb()), loadResults(appDb(), quarter.key)]);
+  const [{ devices, irecError }, results] = await Promise.all([loadDevicesSafe(appDb(), irecDb()), loadResults(appDb(), quarter.key)]);
   const done = devices.filter((d) => results[d.registryId]);
   const total = done.reduce((s, d) => s + results[d.registryId].totalMWh, 0);
   const hoursQ = done.reduce((s, d) => s + results[d.registryId].hoursInQuarter, 0);
@@ -28,6 +29,7 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
         quarter={quarter.key}
       />
       <div className="mx-auto max-w-[1400px] space-y-6 px-6 py-6">
+        <IrecBanner error={irecError} />
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Stat label="Devices processed" value={`${done.length} / ${devices.length}`} hint={quarterLabel(quarter.key)} />
           <Stat label="Hourly statement total" value={`${mwh(total, 1)} MWh`} hint="sum of written hours" />
@@ -91,7 +93,7 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
                       <tr key={d.id} className={r ? "hover:bg-surface-2/60" : "text-faint"}>
                         <td className="td pl-4">
                           <div className="whitespace-nowrap font-medium text-ink">{d.outputName}</div>
-                          <div className="num text-[12px] text-muted">{d.registryId}{!d.inIrec && <span className="ml-1.5 text-danger">· not in irec</span>}</div>
+                          <div className="num text-[12px] text-muted">{d.registryId}{!d.inIrec && !irecError && <span className="ml-1.5 text-danger">· not in irec</span>}</div>
                         </td>
                         <td className="td" title={r ? `${r.sourceName}\nprocessed ${new Date(r.processedAt).toLocaleString("en-IN")}${r.processedBy ? ` by ${r.processedBy}` : ""}` : undefined}>
                           {r ? (

@@ -21,7 +21,7 @@ export function ImportWorkbook() {
       if (!res.ok) throw new Error(json.error);
       setMsg({
         ok: true,
-        text: `${json.added} added, ${json.updated} updated${json.skipped.length ? ` · not in irec, skipped: ${json.skipped.join(", ")}` : ""}.`,
+        text: `${json.added} added, ${json.updated} updated${json.skipped.length ? ` · skipped: ${json.skipped.join("; ")}` : ""}.`,
       });
       router.refresh();
     } catch (e) {

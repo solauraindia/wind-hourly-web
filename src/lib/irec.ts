@@ -3,6 +3,17 @@ import type { DeviceActuals } from "./actuals";
 import type { Db } from "./db";
 import type { Quarter } from "./quarter";
 
+/**
+ * One irec device per registry id. device_meta_id is not declared unique in
+ * irec; should it ever repeat (e.g. a re-registered device), prefer the Active
+ * row, then the newest — never sum or mix two devices.
+ */
+const DEVICE_PER_REGISTRY_ID = `
+  SELECT DISTINCT ON (device_meta_id) *
+    FROM devices
+   WHERE device_meta_id = ANY($1::text[])
+   ORDER BY device_meta_id, (status = 'Active') DESC NULLS LAST, device_id DESC`;
+
 /** Device master data as held in irec (devices ⨝ companies). */
 export interface IrecDevice {
   registryId: string; // devices.device_meta_id
@@ -13,7 +24,7 @@ export interface IrecDevice {
   status: string | null;
 }
 
-export async function irecDevices(db: Db, registryIds?: string[]): Promise<Map<string, IrecDevice>> {
+export async function irecDevices(db: Db, registryIds: string[]): Promise<Map<string, IrecDevice>> {
   const rows = await db.query<{
     registry_id: string;
     meter_id: string | null;
@@ -24,11 +35,9 @@ export async function irecDevices(db: Db, registryIds?: string[]): Promise<Map<s
   }>(
     `SELECT d.device_meta_id AS registry_id, d.htsc_no AS meter_id, d.project_description AS facility_id,
             c.company_name AS client, d.project_capacity AS capacity, d.status
-       FROM devices d
-       LEFT JOIN companies c ON c.company_id = d.company_id
-      WHERE d.device_meta_id IS NOT NULL
-        AND ($1::text[] IS NULL OR d.device_meta_id = ANY($1::text[]))`,
-    [registryIds ?? null],
+       FROM (${DEVICE_PER_REGISTRY_ID}) d
+       LEFT JOIN companies c ON c.company_id = d.company_id`,
+    [registryIds],
   );
   return new Map(
     rows.map((r) => [
@@ -55,7 +64,7 @@ export async function irecActuals(db: Db, quarter: Quarter, registryIds: string[
   const periods = quarter.months.map(([y, m]) => period(y, m));
   const rows = await db.query<{ registry_id: string; period: number; actual: string | null; eligible: string | null; issued: string | null }>(
     `WITH p AS (SELECT unnest($2::int[]) AS period),
-          dev AS (SELECT device_id, device_meta_id FROM devices WHERE device_meta_id = ANY($1::text[])),
+          dev AS (SELECT device_id, device_meta_id FROM (${DEVICE_PER_REGISTRY_ID}) d),
           iss AS (SELECT device_id, period, SUM(issued_units) AS issued
                     FROM issuances WHERE period = ANY($2::int[]) GROUP BY device_id, period)
      SELECT dev.device_meta_id AS registry_id, p.period,

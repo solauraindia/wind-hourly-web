@@ -16,7 +16,7 @@ const EDITABLE: { key: "registryId" | "alias" | "sourceHint" | "outputName"; lab
 
 const blank = (): Row => ({ id: "", registryId: "", alias: "", outputName: "", client: "", meterId: "", facilityId: "", inIrec: false, isNew: true });
 
-export function DevicesEditor({ initial }: { initial: Device[] }) {
+export function DevicesEditor({ initial, version }: { initial: Device[]; version: string }) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(initial);
   const [editing, setEditing] = useState(false);
@@ -35,10 +35,23 @@ export function DevicesEditor({ initial }: { initial: Device[] }) {
   async function save() {
     setBusy(true);
     setMsg(null);
+    const devices = rows.map(({ registryId, alias, outputName, sourceHint }) => ({ registryId, alias, outputName, sourceHint }));
+    const put = (confirmDelete: string[] = []) =>
+      fetch("/api/devices", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version, devices, confirmDelete }) });
     try {
-      const body = rows.map(({ registryId, alias, outputName, sourceHint }) => ({ registryId, alias, outputName, sourceHint }));
-      const res = await fetch("/api/devices", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const json = await res.json();
+      let res = await put();
+      let json = await res.json();
+      if (res.status === 409 && json.needsConfirmation) {
+        const list = (json.needsConfirmation as { registryId: string; outputName: string; quarters: string[] }[])
+          .map((d) => `• ${d.outputName} (${d.registryId}): ${d.quarters.join(", ")}`)
+          .join("\n");
+        if (!window.confirm(`Removing these devices permanently deletes their stored hourly data:\n\n${list}\n\nContinue?`)) {
+          setMsg({ ok: false, text: "Not saved — nothing was deleted." });
+          return;
+        }
+        res = await put(json.needsConfirmation.map((d: { registryId: string }) => d.registryId));
+        json = await res.json();
+      }
       if (!res.ok) throw new Error(json.error);
       setRows(json.devices);
       setEditing(false);

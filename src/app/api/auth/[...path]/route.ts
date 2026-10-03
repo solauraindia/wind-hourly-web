@@ -1,26 +1,23 @@
 import { auth } from "@/lib/auth/server";
+import { isAllowedAuthPath } from "@/lib/validate";
 
 /**
- * Proxy to Neon Auth, restricted to email + password sign-in for existing
- * accounts: sign-up, social/OAuth, magic-link and OTP routes are refused here
- * (also disable them in the Neon console — this is the second lock).
+ * Proxy to Neon Auth, limited to email + password sign-in, sign-out and session
+ * reads. The allow-list is checked against the decoded params — the same value
+ * the Neon handler forwards upstream — so percent-encoded paths can't slip past.
+ * Sign-up and social login must also stay disabled in the Neon console, since
+ * the Neon Auth URL itself is reachable without this proxy.
  */
-const BLOCKED = [/\/sign-up(\/|$)/, /\/sign-in\/(?!email$)/, /\/link-social/, /\/oauth2?\//, /\/magic-link/, /\/email-otp/];
-
-function blocked(req: Request): boolean {
-  const path = new URL(req.url).pathname.replace(/^\/api\/auth/, "");
-  return BLOCKED.some((re) => re.test(path));
-}
+type Ctx = { params: Promise<{ path: string[] }> };
+type Handler = (req: Request, ctx: Ctx) => Promise<Response>;
 
 const forbidden = () => Response.json({ error: "Not available" }, { status: 403 });
 
-type Handler = (req: Request, ctx: { params: Promise<{ path: string[] }> }) => Promise<Response>;
-const handlers = () => auth().handler() as unknown as { GET: Handler; POST: Handler };
-
-export async function GET(req: Request, ctx: { params: Promise<{ path: string[] }> }) {
-  return blocked(req) ? forbidden() : handlers().GET(req, ctx);
+async function guarded(method: "GET" | "POST", req: Request, ctx: Ctx) {
+  if (!isAllowedAuthPath((await ctx.params).path)) return forbidden();
+  const handlers = auth().handler() as unknown as Record<"GET" | "POST", Handler>;
+  return handlers[method](req, ctx);
 }
 
-export async function POST(req: Request, ctx: { params: Promise<{ path: string[] }> }) {
-  return blocked(req) ? forbidden() : handlers().POST(req, ctx);
-}
+export const GET = (req: Request, ctx: Ctx) => guarded("GET", req, ctx);
+export const POST = (req: Request, ctx: Ctx) => guarded("POST", req, ctx);

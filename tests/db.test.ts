@@ -6,12 +6,12 @@ import { irecActuals, irecDevices } from "@/lib/irec";
 import { renderMeterXlsx } from "@/lib/output";
 import { detectAndParse } from "@/lib/parsers/detect";
 import { parseQuarter } from "@/lib/quarter";
-import { loadDevices, loadHourly, loadMappings, loadResults, saveHourly, saveMappings } from "@/lib/store";
+import { loadDevices, loadHourly, loadMappings, loadResults, mappingsVersion, saveHourly, saveMappings } from "@/lib/store";
 import { IREC_SCHEMA, appTestDb, memoryDb } from "./support/pglite";
 
 const q2 = parseQuarter("2026-Q2")!;
 
-async function irecFixture() {
+export async function irecFixture() {
   return memoryDb(`${IREC_SCHEMA}
     INSERT INTO companies (company_name) VALUES ('Rajaguru Spinning Mills Pvt Ltd'), ('Mothi Spinner Pvt Ltd');
     INSERT INTO devices (device_meta_id, project_description, project_capacity, htsc_no, status, company_id) VALUES
@@ -53,7 +53,7 @@ describe("app database", () => {
     const d = devices.find((x) => x.registryId === "1.5MWIND016")!;
     expect(d).toMatchObject({ meterId: "59244760157", client: "Rajaguru Spinning Mills Pvt Ltd", inIrec: true, outputName: "RSMKP-04" });
     expect(devices.find((x) => x.registryId === "2.1MWIND007")!.inIrec).toBe(false);
-    expect((await irecDevices(irec)).size).toBe(2);
+    expect((await irecDevices(irec, ["1.5MWIND016", "2.7MES20003", "nope"])).size).toBe(2);
   });
 
   it("stores, replaces and reloads an hourly statement exactly", async () => {
@@ -84,7 +84,7 @@ describe("app database", () => {
     const db = await appTestDb();
     await saveHourly(db, payload("1.5MWIND016", () => 1), null);
     const keep = (await loadMappings(db)).filter((m) => m.registryId !== "1.5MWIND016").reverse();
-    await saveMappings(db, keep, "a@x.in");
+    await saveMappings(db, keep, "a@x.in", await mappingsVersion(db));
     expect((await loadMappings(db)).map((m) => m.registryId)).toEqual(keep.map((m) => m.registryId));
     expect(await loadResults(db, q2.key)).toEqual({});
   });

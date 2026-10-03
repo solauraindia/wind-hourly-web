@@ -1,5 +1,6 @@
 import { zipSync } from "fflate";
 import { requireApiUser } from "@/lib/auth/server";
+import { contentDisposition } from "@/lib/validate";
 import { appDb, irecDb } from "@/lib/db";
 import { outputFileName, renderMeterXlsx } from "@/lib/output";
 import { parseQuarter } from "@/lib/quarter";
@@ -25,7 +26,7 @@ export async function GET(req: Request, ctx: RouteContext<"/api/bundle/[quarter]
   return new Response(new Uint8Array(zipSync(entries, { level: 6 })), {
     headers: {
       "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="hourly_${quarter.compact}.zip"`,
+      "Content-Disposition": contentDisposition(`hourly_${quarter.compact}.zip`),
     },
   });
 }

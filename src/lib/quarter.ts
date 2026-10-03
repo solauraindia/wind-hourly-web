@@ -1,4 +1,4 @@
-import { naive } from "./time";
+import { LOCAL_OFFSET_MIN, naive } from "./time";
 
 export type QuarterKey = `${number}-Q${1 | 2 | 3 | 4}`;
 
@@ -38,16 +38,24 @@ export function parseQuarter(key: string | undefined | null): Quarter | null {
   };
 }
 
+/** Calendar date at the sites (IST), whatever the server's own timezone is (UTC on Vercel). */
+function siteToday(now: Date): { year: number; month0: number } {
+  const local = new Date(now.getTime() + LOCAL_OFFSET_MIN * 60_000);
+  return { year: local.getUTCFullYear(), month0: local.getUTCMonth() };
+}
+
 /** Most recently completed quarter relative to `now` — the usual reporting target. */
 export function defaultQuarterKey(now = new Date()): QuarterKey {
-  const q = Math.floor(now.getMonth() / 3); // 0-based current quarter
-  return q === 0 ? (`${now.getFullYear() - 1}-Q4` as QuarterKey) : (`${now.getFullYear()}-Q${q}` as QuarterKey);
+  const { year, month0 } = siteToday(now);
+  const q = Math.floor(month0 / 3); // 0-based current quarter
+  return q === 0 ? (`${year - 1}-Q4` as QuarterKey) : (`${year}-Q${q}` as QuarterKey);
 }
 
 export function recentQuarters(count = 8, now = new Date()): QuarterKey[] {
   const out: QuarterKey[] = [];
-  let year = now.getFullYear();
-  let q = Math.floor(now.getMonth() / 3) + 1;
+  const today = siteToday(now);
+  let year = today.year;
+  let q = Math.floor(today.month0 / 3) + 1;
   for (let i = 0; i < count; i++) {
     out.push(`${year}-Q${q}` as QuarterKey);
     q -= 1;
