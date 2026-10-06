@@ -1,4 +1,5 @@
-import { IconDatabase, IconDownload } from "@/components/Icons";
+import { DownloadButton } from "@/components/DownloadButton";
+import { IconDatabase } from "@/components/Icons";
 import { PageHeader } from "@/components/PageHeader";
 import { Stat } from "@/components/Stat";
 import type { DeviceActuals } from "@/lib/actuals";
@@ -31,9 +32,7 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
         subtitle="Actual generation and eligible credits against the hourly statement, per device."
         quarter={quarter.key}
         actions={
-          <a className="btn" href={`/api/summary/${quarter.key}`}>
-            <IconDownload /> Export .xlsx
-          </a>
+          <DownloadButton href={`/api/summary/${quarter.key}`}>Export .xlsx</DownloadButton>
         }
       />
       <div className="mx-auto max-w-[1400px] space-y-6 px-6 py-6">

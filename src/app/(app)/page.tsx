@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CoverageStrip } from "@/components/CoverageStrip";
-import { IconDownload } from "@/components/Icons";
+import { DownloadButton } from "@/components/DownloadButton";
+import { LinkPending } from "@/components/Pending";
 import { PageHeader } from "@/components/PageHeader";
 import { ProcessFlow } from "@/components/ProcessFlow";
 import { Stat } from "@/components/Stat";
@@ -55,14 +56,14 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
                     href={`/?q=${quarter.key}${u === "kWh" ? "&unit=kWh" : ""}`}
                     className={`rounded-md px-2.5 py-1 text-[12.5px] font-medium ${unit === u ? "bg-accent text-white" : "text-muted hover:text-ink"}`}
                   >
-                    {u}
+                    <LinkPending pending={<span className="animate-pulse">{u}</span>}>{u}</LinkPending>
                   </Link>
                 ))}
               </div>
               {done.length > 0 && (
-                <a className="btn btn-sm" href={`/api/bundle/${quarter.key}?unit=${unit}`}>
-                  <IconDownload /> Download all (.zip)
-                </a>
+                <DownloadButton className="btn btn-sm" href={`/api/bundle/${quarter.key}?unit=${unit}`}>
+                  Download all (.zip)
+                </DownloadButton>
               )}
             </div>
           </div>
@@ -119,9 +120,7 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
                         <td className="td num whitespace-nowrap text-right text-[13px] text-muted">{r ? `${r.hoursEstimated} / ${r.hoursMissing}` : ""}</td>
                         <td className="td pr-4 text-right">
                           {r && (
-                            <a className="btn btn-sm px-2" href={`/api/files/${quarter.key}/${encodeURIComponent(d.registryId)}?unit=${unit}`} title={`Download ${d.outputName}_hourly_${quarter.compact}.xlsx`} aria-label={`Download ${d.outputName}`}>
-                              <IconDownload />
-                            </a>
+                            <DownloadButton className="btn btn-sm px-2" href={`/api/files/${quarter.key}/${encodeURIComponent(d.registryId)}?unit=${unit}`} title={`Download ${d.outputName}_hourly_${quarter.compact}.xlsx`} label={`Download ${d.outputName}`} />
                           )}
                         </td>
                       </tr>

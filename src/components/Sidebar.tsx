@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { IconDevices, IconTable, IconTurbine, IconUpload } from "./Icons";
+import { LinkPending } from "./Pending";
 import { SignOutButton } from "./SignOutButton";
 
 const NAV = [
@@ -37,7 +38,9 @@ export function Sidebar({ email }: { email: string }) {
                 active ? "bg-accent-soft font-medium text-accent" : "text-muted hover:bg-surface-2 hover:text-ink"
               }`}
             >
-              <Icon />
+              <LinkPending>
+                <Icon />
+              </LinkPending>
               {label}
             </Link>
           );
