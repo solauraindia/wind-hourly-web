@@ -7,11 +7,12 @@ import { IconAlert, IconCheck, IconX } from "./Icons";
 
 type Row = Device & { isNew?: boolean };
 
-const EDITABLE: { key: "registryId" | "alias" | "sourceHint" | "outputName"; label: string; width: string; hint: string }[] = [
+const EDITABLE: { key: "registryId" | "alias" | "sourceHint" | "outputName" | "site"; label: string; width: string; hint: string }[] = [
   { key: "registryId", label: "Registry id", width: "w-[130px]", hint: "irec devices.device_meta_id (eac_registry_id)" },
   { key: "outputName", label: "Output name", width: "w-[170px]", hint: "File stem: <name>_hourly_2026Q2.xlsx" },
   { key: "alias", label: "Raw alias", width: "w-[110px]", hint: "Turbine name as it appears in the raw export" },
   { key: "sourceHint", label: "Source hint", width: "w-[120px]", hint: "Text in the raw file name that disambiguates repeated aliases" },
+  { key: "site", label: "Site", width: "w-[120px]", hint: "Physical site; turbines at the same site are used as evidence when reconciling logger gaps" },
 ];
 
 const blank = (): Row => ({ id: "", registryId: "", alias: "", outputName: "", client: "", meterId: "", facilityId: "", inIrec: false, isNew: true });
@@ -38,7 +39,7 @@ export function DevicesEditor({ initial, version: initialVersion, irecUnavailabl
   async function save() {
     setBusy(true);
     setMsg(null);
-    const devices = rows.map(({ registryId, alias, outputName, sourceHint }) => ({ registryId, alias, outputName, sourceHint }));
+    const devices = rows.map(({ registryId, alias, outputName, sourceHint, site }) => ({ registryId, alias, outputName, sourceHint, site }));
     const put = (confirmDelete: string[] = []) =>
       fetch("/api/devices", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version, devices, confirmDelete }) });
     try {
@@ -109,7 +110,7 @@ export function DevicesEditor({ initial, version: initialVersion, irecUnavailabl
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td className="td py-10 text-center text-muted" colSpan={9}>No devices yet — import a delivery workbook above or add one.</td>
+                <td className="td py-10 text-center text-muted" colSpan={10}>No devices yet — import a delivery workbook above or add one.</td>
               </tr>
             )}
             {rows.map((d, i) => (
