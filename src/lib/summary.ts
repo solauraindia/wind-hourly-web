@@ -14,6 +14,8 @@ export interface SummaryRow {
   eligible: number | null;
   hourly: [number, number, number] | null;
   hourlyTotal: number | null;
+  /** actual − hourly per month; null when either side is missing */
+  diffMonthly: [number | null, number | null, number | null];
   /** actual total − hourly total */
   diff: number | null;
   /** min(eligible, hourly total) — the volume that can be claimed */
@@ -32,6 +34,7 @@ export function buildSummary(devices: Device[], results: Record<string, HourlyRe
     const actualTotal = sum3(actual);
     const eligible = a?.eligibleMWh ?? actualTotal;
     const hourlyTotal = r ? r.totalMWh : null;
+    const diffMonthly = actual.map((v, m) => (v !== null && r ? v - r.monthlyMWh[m] : null)) as SummaryRow["diffMonthly"];
     return {
       sl: i + 1,
       deviceId: d.id,
@@ -43,6 +46,7 @@ export function buildSummary(devices: Device[], results: Record<string, HourlyRe
       eligible,
       hourly: r ? r.monthlyMWh : null,
       hourlyTotal,
+      diffMonthly,
       diff: actualTotal !== null && hourlyTotal !== null ? actualTotal - hourlyTotal : null,
       min: eligible !== null && hourlyTotal !== null ? Math.min(eligible, hourlyTotal) : null,
       issued: a?.issuedMWh ?? null,
@@ -58,6 +62,7 @@ export function summaryTotals(rows: SummaryRow[]) {
     eligible: t((r) => r.eligible),
     hourly: [0, 1, 2].map((i) => t((r) => r.hourly?.[i] ?? null)) as (number | null)[],
     hourlyTotal: t((r) => r.hourlyTotal),
+    diffMonthly: [0, 1, 2].map((i) => t((r) => r.diffMonthly[i])) as (number | null)[],
     diff: t((r) => r.diff),
     min: t((r) => r.min),
     issued: t((r) => r.issued),
@@ -73,10 +78,12 @@ export async function summaryWorkbook(quarter: Quarter, rows: SummaryRow[]): Pro
   ws.mergeCells("F3:H3");
   ws.getCell("K3").value = "As per Hourly Statement";
   ws.mergeCells("K3:M3");
+  ws.getCell("O3").value = "Diff (Actual − Hourly)";
+  ws.mergeCells("O3:R3");
   ws.getRow(4).values = [
     undefined, "Sl No", "Client", "Device ID", "Device Name",
     m1, m2, m3, "Total", "Eligible Credits after Banking",
-    m1, m2, m3, "Total", "Diff", "Min", "Issued as per Evident",
+    m1, m2, m3, "Total", m1, m2, m3, "Total", "Min", "Issued as per Evident",
   ];
   for (const r of [3, 4]) ws.getRow(r).font = { bold: true };
 
@@ -90,6 +97,7 @@ export async function summaryWorkbook(quarter: Quarter, rows: SummaryRow[]): Pro
       r.eligible !== null && r.actualTotal !== null && Math.abs(r.eligible - r.actualTotal) < 1e-6 ? { formula: `I${n}` } : r.eligible,
       r.hourly?.[0] ?? null, r.hourly?.[1] ?? null, r.hourly?.[2] ?? null,
       r.hourly ? { formula: `SUM(K${n}:M${n})` } : null,
+      ...(["F", "G", "H"] as const).map((a, m) => (r.diffMonthly[m] !== null ? { formula: `${a}${n}-${"KLM"[m]}${n}` } : null)),
       r.hourly ? { formula: `I${n}-N${n}` } : null,
       r.hourly ? { formula: `MIN(J${n},N${n})` } : null,
       r.issued,
@@ -98,11 +106,11 @@ export async function summaryWorkbook(quarter: Quarter, rows: SummaryRow[]): Pro
   const last = 4 + rows.length;
   const total = ws.getRow(last + 1);
   total.getCell(3).value = "Total";
-  for (const col of ["F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q"]) {
+  for (const col of ["F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T"]) {
     ws.getCell(`${col}${last + 1}`).value = { formula: `SUM(${col}5:${col}${last})` };
   }
   total.font = { bold: true };
-  for (let c = 6; c <= 17; c++) ws.getColumn(c).numFmt = "#,##0.000";
-  ws.columns.forEach((c, i) => (c.width = [4, 7, 40, 14, 44, 11, 11, 11, 12, 16, 11, 11, 11, 12, 11, 12, 14][i]));
+  for (let c = 6; c <= 20; c++) ws.getColumn(c).numFmt = "#,##0.000";
+  ws.columns.forEach((c, i) => (c.width = [4, 7, 40, 14, 44, 11, 11, 11, 12, 16, 11, 11, 11, 12, 11, 11, 11, 12, 12, 14][i]));
   return new Uint8Array((await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }

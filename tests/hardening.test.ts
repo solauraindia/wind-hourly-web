@@ -1,4 +1,5 @@
 /** Regression tests for the issues raised in the Fable review. */
+import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import type { DeviceActuals } from "@/lib/actuals";
 import { computeHourly, quarterHours, type HourlyPayload } from "@/lib/compute";
@@ -7,7 +8,7 @@ import { defaultQuarterKey, parseQuarter, recentQuarters } from "@/lib/quarter";
 import {
   StaleMappingsError, deletionImpact, loadDevicesSafe, loadMappings, mappingsVersion, saveHourly, saveMappings, validatePayload,
 } from "@/lib/store";
-import { buildSummary, summaryTotals } from "@/lib/summary";
+import { buildSummary, summaryTotals, summaryWorkbook } from "@/lib/summary";
 import type { Db } from "@/lib/db";
 import type { Device, HourlyResult } from "@/lib/types";
 import { cleanMapping, cleanMappings, contentDisposition, isAllowed, isAllowedAuthPath } from "@/lib/validate";
@@ -177,6 +178,30 @@ describe("summary math", () => {
     expect(rows[1]).toMatchObject({ actualTotal: 40, eligible: 40, hourlyTotal: 15, diff: 25, min: 15 });
     expect(rows[2]).toMatchObject({ actualTotal: null, hourly: null, diff: null, min: null });
     expect(summaryTotals(rows)).toMatchObject({ actualTotal: 640, hourlyTotal: 635, min: 515, issued: 480 });
+  });
+  it("diffs each month, leaving a month blank when either side is missing", () => {
+    const actuals: Record<string, DeviceActuals> = {
+      A: { registryId: "A", actualMWh: [100, 200, 300], eligibleMWh: null, issuedMWh: null },
+      B: { registryId: "B", actualMWh: [10, null, 30], eligibleMWh: null, issuedMWh: null },
+    };
+    const rows = buildSummary([dev("A"), dev("B"), dev("C")], { A: res("A", [90, 210, 320]), B: res("B", [5, 5, 5]) }, actuals);
+    expect(rows[0].diffMonthly).toEqual([10, -10, -20]);
+    expect(rows[1].diffMonthly).toEqual([5, null, 25]);
+    expect(rows[2].diffMonthly).toEqual([null, null, null]);
+    expect(summaryTotals(rows).diffMonthly).toEqual([15, -10, 5]);
+  });
+  it("exports monthly diffs as live formulas between hourly total and Min", async () => {
+    const actuals: Record<string, DeviceActuals> = { A: { registryId: "A", actualMWh: [100, null, 300], eligibleMWh: 500, issuedMWh: 480 } };
+    const rows = buildSummary([dev("A")], { A: res("A", [90, 210, 320]) }, actuals);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await summaryWorkbook(q2, rows)) as unknown as ArrayBuffer);
+    const ws = wb.worksheets[0];
+    const header = (ws.getRow(4).values as unknown[]).slice(1);
+    expect(header.slice(10)).toEqual(["Apr", "May", "Jun", "Total", "Apr", "May", "Jun", "Total", "Min", "Issued as per Evident"]);
+    expect(ws.getCell("O3").value).toBe("Diff (Actual − Hourly)");
+    const f = (c: string) => (ws.getCell(c).value as { formula?: string } | null)?.formula ?? ws.getCell(c).value;
+    expect([f("O5"), f("P5"), f("Q5"), f("R5"), f("S5"), f("T5")]).toEqual(["F5-K5", null, "H5-M5", "I5-N5", "MIN(J5,N5)", 480]);
+    expect([f("O6"), f("R6"), f("S6"), f("T6")]).toEqual(["SUM(O5:O5)", "SUM(R5:R5)", "SUM(S5:S5)", "SUM(T5:T5)"]);
   });
 });
 

@@ -10,6 +10,15 @@ import { quarterFromSearch } from "@/lib/pageQuarter";
 import { loadDevicesSafe, loadResults } from "@/lib/store";
 import { buildSummary, summaryTotals } from "@/lib/summary";
 
+/** Amber when actual and hourly differ by more than 10%, red when hourly exceeds actual. */
+function diffCell(diff: number | null, actual: number | null) {
+  const off = diff !== null && actual ? Math.abs(diff) / actual > 0.1 : false;
+  return {
+    className: off ? "font-medium text-warn" : diff !== null && diff < 0 ? "text-danger" : "",
+    title: off ? "Differs from actuals by more than 10%" : undefined,
+  };
+}
+
 export default async function SummaryPage({ searchParams }: PageProps<"/summary">) {
   const quarter = await quarterFromSearch(searchParams);
   const [{ devices, irecError }, results] = await Promise.all([loadDevicesSafe(appDb(), irecDb()), loadResults(appDb(), quarter.key)]);
@@ -66,7 +75,8 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
                   <th className="th border-l bg-surface text-center normal-case tracking-normal text-ink" colSpan={4}>Actual generation</th>
                   <th className="th border-b-0 border-l bg-surface" />
                   <th className="th border-l bg-surface text-center normal-case tracking-normal text-ink" colSpan={4}>As per hourly statement</th>
-                  <th className="th border-b-0 border-l bg-surface" colSpan={3} />
+                  <th className="th border-l bg-surface text-center normal-case tracking-normal text-ink" colSpan={4}>Diff (actual − hourly)</th>
+                  <th className="th border-b-0 border-l bg-surface" colSpan={2} />
                 </tr>
                 <tr>
                   <th className="th sticky left-0 z-[2] border-r pl-5">Device · client</th>
@@ -75,14 +85,15 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
                   <th className="th border-l text-right">Eligible</th>
                   {[m1, m2, m3].map((m, i) => <th key={m} className={`th text-right ${i === 0 ? "border-l" : ""}`}>{m}</th>)}
                   <th className="th text-right">Total</th>
-                  <th className="th border-l text-right">Diff</th>
-                  <th className="th text-right">Min</th>
+                  {[m1, m2, m3].map((m, i) => <th key={m} className={`th text-right ${i === 0 ? "border-l" : ""}`}>{m}</th>)}
+                  <th className="th text-right">Total</th>
+                  <th className="th border-l text-right">Min</th>
                   <th className="th pr-5 text-right">Issued</th>
                 </tr>
               </thead>
               <tbody className="num">
                 {rows.map((r) => {
-                  const off = r.diff !== null && r.actualTotal ? Math.abs(r.diff) / r.actualTotal > 0.1 : false;
+                  const total = diffCell(r.diff, r.actualTotal);
                   return (
                     <tr key={r.deviceId} className="group hover:bg-surface-2">
                       <td className="td sticky left-0 z-[1] w-[260px] max-w-[260px] border-r bg-surface pl-5 group-hover:bg-surface-2" title={`${r.deviceName}`}>
@@ -97,10 +108,12 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
                       <td className="td border-l text-right">{mwh(r.eligible)}</td>
                       {[0, 1, 2].map((i) => <td key={i} className={`td text-right ${i === 0 ? "border-l" : ""}`}>{r.hourly ? mwh(r.hourly[i]) : <span className="text-faint">—</span>}</td>)}
                       <td className="td text-right font-medium">{mwh(r.hourlyTotal)}</td>
-                      <td className={`td border-l text-right ${off ? "font-medium text-warn" : r.diff !== null && r.diff < 0 ? "text-danger" : ""}`} title={off ? "Differs from actuals by more than 10%" : undefined}>
-                        {mwh(r.diff)}
-                      </td>
-                      <td className="td text-right font-semibold text-ok">{mwh(r.min)}</td>
+                      {r.diffMonthly.map((v, i) => {
+                        const c = diffCell(v, r.actual[i]);
+                        return <td key={i} className={`td text-right ${i === 0 ? "border-l" : ""} ${c.className}`} title={c.title}>{mwh(v)}</td>;
+                      })}
+                      <td className={`td text-right font-medium ${total.className}`} title={total.title}>{mwh(r.diff)}</td>
+                      <td className="td border-l text-right font-semibold text-ok">{mwh(r.min)}</td>
                       <td className="td pr-5 text-right">{mwh(r.issued)}</td>
                     </tr>
                   );
@@ -114,8 +127,9 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
                   <td className="td border-l text-right">{mwh(t.eligible)}</td>
                   {t.hourly.map((v, i) => <td key={i} className={`td text-right ${i === 0 ? "border-l" : ""}`}>{mwh(v)}</td>)}
                   <td className="td text-right">{mwh(t.hourlyTotal)}</td>
-                  <td className="td border-l text-right">{mwh(t.diff)}</td>
-                  <td className="td text-right text-ok">{mwh(t.min)}</td>
+                  {t.diffMonthly.map((v, i) => <td key={i} className={`td text-right ${i === 0 ? "border-l" : ""}`}>{mwh(v)}</td>)}
+                  <td className="td text-right">{mwh(t.diff)}</td>
+                  <td className="td border-l text-right text-ok">{mwh(t.min)}</td>
                   <td className="td pr-5 text-right">{mwh(t.issued)}</td>
                 </tr>
               </tfoot>
@@ -123,7 +137,7 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
           </div>
         </section>
         <p className="text-[12.5px] text-faint">
-          All figures in MWh. Diff = actual total − hourly total (amber when they differ by more than 10%). Min = min(eligible, hourly total). Eligible = Σ eligible_gen (after banking); it falls back to the actual total when irec has none.
+          All figures in MWh. Diff = actual − hourly, per month and for the quarter (amber when they differ by more than 10%, red when hourly is higher). Min = min(eligible, hourly total). Eligible = Σ eligible_gen (after banking); it falls back to the actual total when irec has none.
         </p>
       </div>
     </>
