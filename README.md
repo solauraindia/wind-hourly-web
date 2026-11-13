@@ -56,6 +56,7 @@ pnpm test                # golden + database tests (PGlite, no network)
 | Regen 10-min mean files (txt/xlsx, folder or zip) | RSMKP-01…06 | register(H+1) − register(H), validated to 0–3000 kWh; if that fails, use the average of 6 power samples (flagged as estimated) |
 | SCADA meter reading, turbines stacked in one sheet | uthiur, Ottapidaram | same register method; off-grid timestamps are dropped |
 | 10-min active power trend (timestamps mark the interval end) | JPP Mills (NVL137, KYS060) | average of 6 power samples |
+| Hourly active power trend (`Interval` + bare turbine columns; timestamps mark the hour start) | JPP Mills (NVL137, KYS060) | hourly average kW used as the hour's kWh |
 | Hourly production rows | NVL242 | used as is |
 | Daily × 24-hour matrix | Santhosh Meenakshi (SMTKP) | used as is; checked against Grand Total |
 

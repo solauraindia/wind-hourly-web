@@ -1,7 +1,7 @@
 import { unzipSync } from "fflate";
 import type { Series, SourceFormat } from "../types";
 import { findDailyMatrixHeader, findHourlyLongHeader, parseDailyMatrix, parseHourlyLong } from "./hourlyTables";
-import { findPowerTrendHeader, parsePowerTrend } from "./powerTrend";
+import { parsePowerTrend, powerTrendFormat } from "./powerTrend";
 import { REGEN_FILE_RE, isRegenSheet, mergeRegenFiles, parseRegenSheet, parseRegenText } from "./regenMean";
 import { findScadaHeader, parseScada } from "./scadaMeterReading";
 import { readWorkbook, type Row } from "./xlsx";
@@ -39,7 +39,8 @@ function expand(files: InputFile[]): { file: InputFile; container: string }[] {
 
 export function sniffSheet(rows: Row[]): SourceFormat | null {
   if (findScadaHeader(rows) >= 0) return "scada-meter-reading";
-  if (findPowerTrendHeader(rows) >= 0) return "power-trend";
+  const trend = powerTrendFormat(rows);
+  if (trend) return trend;
   if (isRegenSheet(rows)) return "regen-mean";
   if (findDailyMatrixHeader(rows)) return "daily-matrix";
   if (findHourlyLongHeader(rows)) return "hourly-long";
@@ -84,7 +85,7 @@ export async function detectAndParse(files: InputFile[]): Promise<{ series: Seri
           g.files.push(parseRegenSheet(sheet.rows));
           regen.set(alias, g);
         } else if (fmt === "scada-meter-reading") series.push(...parseScada(sheet.rows, name));
-        else if (fmt === "power-trend") series.push(...parsePowerTrend(sheet.rows, name));
+        else if (fmt === "power-trend" || fmt === "power-trend-hourly") series.push(...parsePowerTrend(sheet.rows, name));
         else if (fmt === "daily-matrix") series.push(...parseDailyMatrix(sheet.rows, name));
         else series.push(...parseHourlyLong(sheet.rows, name));
         break; // one data sheet per workbook

@@ -3,6 +3,7 @@ export type SourceFormat =
   | "regen-mean" // Regen Powertech daily 10-min "mean" files (txt or xlsx), cumulative register
   | "scada-meter-reading" // "Meter Reading\Operational Data" export: stacked turbines, lifetime register + power
   | "power-trend" // "Analogue Value Trending": 10-min average kW per turbine column, interval-END stamps
+  | "power-trend-hourly" // same export at 1-hour intervals: hour-START stamps, average kW = the hour's kWh
   | "hourly-long" // one row per hour: Turbine No | Date & Time | Production (kWh)
   | "daily-matrix"; // one row per turbine-day with hour columns 1..24 (kWh)
 
@@ -10,6 +11,7 @@ export const FORMAT_LABELS: Record<SourceFormat, string> = {
   "regen-mean": "Regen 10-min mean files",
   "scada-meter-reading": "SCADA meter reading (stacked)",
   "power-trend": "10-min active power trend",
+  "power-trend-hourly": "Hourly active power trend",
   "hourly-long": "Hourly production rows",
   "daily-matrix": "Daily × 24-hour matrix",
 };
