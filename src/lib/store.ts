@@ -10,10 +10,12 @@ import { FORMAT_LABELS, type Device, type DeviceMapping, type HourlyResult } fro
 /* Device mappings ------------------------------------------------------------ */
 
 export async function loadMappings(db: Db): Promise<DeviceMapping[]> {
-  const rows = await db.query<{ registry_id: string; alias: string; output_name: string; source_hint: string | null }>(
-    "SELECT registry_id, alias, output_name, source_hint FROM device_mappings ORDER BY sort_order, output_name",
+  const rows = await db.query<{ registry_id: string; alias: string; output_name: string; source_hint: string | null; site: string | null }>(
+    "SELECT registry_id, alias, output_name, source_hint, site FROM device_mappings ORDER BY sort_order, output_name",
   );
-  return rows.map((r) => ({ registryId: r.registry_id, alias: r.alias, outputName: r.output_name, sourceHint: r.source_hint ?? undefined }));
+  return rows.map((r) => ({
+    registryId: r.registry_id, alias: r.alias, outputName: r.output_name, sourceHint: r.source_hint ?? undefined, site: r.site ?? undefined,
+  }));
 }
 
 function join(mappings: DeviceMapping[], master: Map<string, IrecDevice>): Device[] {
@@ -80,10 +82,10 @@ export async function saveMappings(db: Db, mappings: DeviceMapping[], user: stri
       { text: "SELECT assert_device_mappings_version($1)", params: [expectedVersion] },
       { text: "DELETE FROM device_mappings WHERE NOT (registry_id = ANY($1::text[]))", params: [ids] },
       {
-        text: `INSERT INTO device_mappings (registry_id, alias, output_name, source_hint, sort_order, updated_by, updated_at)
-               SELECT * , now() FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::int[], $6::text[])
+        text: `INSERT INTO device_mappings (registry_id, alias, output_name, source_hint, sort_order, updated_by, site, updated_at)
+               SELECT * , now() FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::int[], $6::text[], $7::text[])
                ON CONFLICT (registry_id) DO UPDATE SET alias = EXCLUDED.alias, output_name = EXCLUDED.output_name,
-                 source_hint = EXCLUDED.source_hint, sort_order = EXCLUDED.sort_order,
+                 source_hint = EXCLUDED.source_hint, sort_order = EXCLUDED.sort_order, site = EXCLUDED.site,
                  updated_by = EXCLUDED.updated_by, updated_at = now()`,
         params: [
           ids,
@@ -92,6 +94,7 @@ export async function saveMappings(db: Db, mappings: DeviceMapping[], user: stri
           mappings.map((m) => m.sourceHint ?? null),
           mappings.map((_, i) => i + 1),
           mappings.map(() => user),
+          mappings.map((m) => m.site ?? null),
         ],
       },
     ]);
@@ -206,6 +209,12 @@ export async function saveHourly(db: Db, input: HourlyPayload, user: string | nu
   const quality = { missing: p.missing, estimated: p.estimated, gaps: p.gaps };
   const toKwh = (mwh: number) => Math.round(mwh * 1e6) / 1000;
   await db.transaction([
+    // new raw data replaces any reconciled values, so those reconciliations no longer apply
+    {
+      text: `UPDATE reconciliations SET superseded_at = now()
+              WHERE registry_id = $1 AND quarter = $2 AND undone_at IS NULL AND superseded_at IS NULL`,
+      params: [p.registryId, quarter.key],
+    },
     {
       text: "DELETE FROM hourly_values WHERE registry_id = $1 AND hour_start >= $2 AND hour_start < $3",
       params: [p.registryId, toInstant(quarter.start), toInstant(quarter.end)],
@@ -296,6 +305,6 @@ export async function loadHourly(db: Db, registryId: string, quarter: Quarter): 
   );
   const kwh: (number | null)[] = new Array(quarterHours(quarter)).fill(null);
   for (const r of rows) kwh[Math.round((fromInstant(r.hour_start) - quarter.start) / HOUR)] = Number(r.kwh);
-  const q = (typeof meta.quality === "string" ? JSON.parse(meta.quality) : meta.quality) as Pick<HourlyPayload, "missing" | "estimated" | "gaps">;
+  const q = (typeof meta.quality === "string" ? JSON.parse(meta.quality) : meta.quality) as Pick<HourlyPayload, "missing" | "estimated" | "gaps" | "filled">;
   return { registryId, quarter: quarter.key, format: meta.format, sourceName: meta.source_name, kwh, ...q };
 }

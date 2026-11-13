@@ -8,6 +8,7 @@ import { Stat } from "@/components/Stat";
 import { mwh, pct, quarterLabel } from "@/lib/format";
 import { quarterFromSearch } from "@/lib/pageQuarter";
 import { appDb, irecDb } from "@/lib/db";
+import { activeReconciliations } from "@/lib/reconcileStore";
 import { loadDevicesSafe, loadResults } from "@/lib/store";
 import { IrecBanner } from "@/components/IrecBanner";
 import { FORMAT_LABELS } from "@/lib/types";
@@ -15,7 +16,12 @@ import { FORMAT_LABELS } from "@/lib/types";
 export default async function ProcessPage({ searchParams }: PageProps<"/">) {
   const quarter = await quarterFromSearch(searchParams);
   const unit = (await searchParams).unit === "kWh" ? "kWh" : "MWh";
-  const [{ devices, irecError }, results] = await Promise.all([loadDevicesSafe(appDb(), irecDb()), loadResults(appDb(), quarter.key)]);
+  const [{ devices, irecError }, results, recs] = await Promise.all([
+    loadDevicesSafe(appDb(), irecDb()), loadResults(appDb(), quarter.key), activeReconciliations(appDb(), quarter.key),
+  ]);
+  // registryId → reconciled month labels, e.g. ["Apr", "May"]
+  const reconciled: Record<string, string[]> = {};
+  for (const r of recs.values()) (reconciled[r.registryId] ??= []).push(quarter.monthLabels[quarter.months.findIndex(([y, m]) => r.month === `${y}-${String(m).padStart(2, "0")}`)]);
   const done = devices.filter((d) => results[d.registryId]);
   const total = done.reduce((s, d) => s + results[d.registryId].totalMWh, 0);
   const hoursQ = done.reduce((s, d) => s + results[d.registryId].hoursInQuarter, 0);
@@ -38,7 +44,7 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
           <Stat label="Power-estimated hours" value={est.toLocaleString()} hint="register unusable, power used" />
         </section>
 
-        <ProcessFlow devices={devices} quarter={quarter.key} />
+        <ProcessFlow devices={devices} quarter={quarter.key} reconciled={reconciled} />
 
         <section className="card overflow-hidden">
           <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
@@ -98,7 +104,14 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
                         </td>
                         <td className="td" title={r ? `${r.sourceName}\nprocessed ${new Date(r.processedAt).toLocaleString("en-IN")}${r.processedBy ? ` by ${r.processedBy}` : ""}` : undefined}>
                           {r ? (
-                            <span className="chip whitespace-nowrap bg-accent-soft text-accent">{FORMAT_LABELS[r.format]}</span>
+                            <div className="flex flex-wrap gap-1">
+                              <span className="chip whitespace-nowrap bg-accent-soft text-accent">{FORMAT_LABELS[r.format]}</span>
+                              {reconciled[d.registryId] && (
+                                <Link href={`/reconcile?q=${quarter.key}`} className="chip whitespace-nowrap bg-ok-soft text-ok" title="Values for these months were reconciled to issued; originals are kept">
+                                  Reconciled · {reconciled[d.registryId].join(", ")}
+                                </Link>
+                              )}
+                            </div>
                           ) : (
                             <span className="chip bg-surface-2 text-faint">Not processed</span>
                           )}

@@ -44,12 +44,14 @@ export function cleanMapping(input: Partial<DeviceMapping>): DeviceMapping | str
   const alias = String(input.alias ?? "").trim();
   const outputName = String(input.outputName ?? "").trim() || alias;
   const sourceHint = String(input.sourceHint ?? "").trim() || undefined;
+  const site = String(input.site ?? "").trim() || undefined;
   const who = registryId || "(new device)";
   if (!registryId || registryId.length > 40) return `${who}: registry id is required (max 40 characters)`;
   if (!ALIAS_RE.test(alias)) return `${who}: raw alias must be 1–40 letters, digits, spaces, '.', '_' or '-'`;
   if (!OUTPUT_NAME_RE.test(outputName)) return `${who}: output name must be 1–80 letters, digits, '.', '_' or '-' (no spaces or slashes)`;
   if (sourceHint && sourceHint.length > 60) return `${who}: source hint is too long (max 60 characters)`;
-  return { registryId, alias, outputName, sourceHint };
+  if (site && site.length > 60) return `${who}: site is too long (max 60 characters)`;
+  return { registryId, alias, outputName, sourceHint, site };
 }
 
 /** Clean a whole list and reject duplicates; returns an error message or the list. */

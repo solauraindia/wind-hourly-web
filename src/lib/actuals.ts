@@ -7,4 +7,6 @@ export interface DeviceActuals {
   eligibleMWh: number | null;
   /** Σ issuances.issued_units over the quarter's periods */
   issuedMWh: number | null;
+  /** issuances.issued_units per month of the quarter */
+  issuedMonthlyMWh?: [number | null, number | null, number | null];
 }

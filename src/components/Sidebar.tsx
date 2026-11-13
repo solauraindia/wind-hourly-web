@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { IconDevices, IconTable, IconTurbine, IconUpload } from "./Icons";
+import { IconDevices, IconScale, IconTable, IconTurbine, IconUpload } from "./Icons";
 import { LinkPending } from "./Pending";
 import { SignOutButton } from "./SignOutButton";
 
 const NAV = [
   { href: "/", label: "Hourly mapping", icon: IconUpload },
   { href: "/summary", label: "Quarter summary", icon: IconTable },
+  { href: "/reconcile", label: "Reconcile", icon: IconScale },
   { href: "/devices", label: "Devices", icon: IconDevices },
 ];
 

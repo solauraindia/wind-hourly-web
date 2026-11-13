@@ -70,6 +70,10 @@ export async function renderMeterXlsx(p: HourlyPayload, device: Device, quarter:
     ["hour_start_local"],
     ...p.estimated.map((i) => [at(i)]),
   ];
+  if (p.filled?.length) {
+    lines.push([], ["Hours filled during reconciliation (logger gap, estimated from neighbouring turbines or this turbine's typical output)"], ["hour_start_local"]);
+    for (const i of p.filled) lines.push([at(i)]);
+  }
   if (p.gaps.length) {
     lines.push([], ["10-min SCADA gaps (consecutive missing timestamps collapsed)"], ["gap_start_local", "gap_end_local", "missing_slot_count", "duration_minutes"]);
     for (const [s, e, slots] of p.gaps) lines.push([fmtNaive(s), fmtNaive(e), slots, slots * 10]);

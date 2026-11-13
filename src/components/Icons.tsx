@@ -64,3 +64,8 @@ export const IconX = (p: P) => (
     <path d="M6 6l12 12M18 6 6 18" />
   </svg>
 );
+export const IconScale = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 4v16M7 20h10M5 8h14M5 8l-2.5 6a3 3 0 0 0 5 0L5 8ZM19 8l-2.5 6a3 3 0 0 0 5 0L19 8Z" />
+  </svg>
+);

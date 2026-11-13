@@ -31,7 +31,7 @@ describe("app database", () => {
     const db = await appTestDb();
     const m = await loadMappings(db);
     expect(m).toHaveLength(17);
-    expect(m[3]).toEqual({ registryId: "2.7MES20012", alias: "ERW01", outputName: "Ottapidaram-ERW01", sourceHint: "Ottapidaram" });
+    expect(m[3]).toEqual({ registryId: "2.7MES20012", alias: "ERW01", outputName: "Ottapidaram-ERW01", sourceHint: "Ottapidaram", site: "Ottapidaram" });
   });
 
   it("joins mappings with irec master data", async () => {
@@ -84,7 +84,22 @@ describe("irec actuals", () => {
     expect(a["1.5MWIND016"].actualMWh).toEqual([109.061, 382.025, 708.754]);
     expect(a["1.5MWIND016"].eligibleMWh).toBeCloseTo(1003.091, 6);
     expect(a["1.5MWIND016"].issuedMWh).toBeCloseTo(621.066, 6);
-    expect(a["2.7MES20003"]).toEqual({ registryId: "2.7MES20003", actualMWh: [null, null, null], eligibleMWh: null, issuedMWh: null });
+    expect(a["1.5MWIND016"].issuedMonthlyMWh).toEqual([109.061, null, 512.005]);
+    expect(a["2.7MES20003"]).toEqual({
+      registryId: "2.7MES20003", actualMWh: [null, null, null], eligibleMWh: null, issuedMWh: null, issuedMonthlyMWh: [null, null, null],
+    });
+  });
+});
+
+describe("sites", () => {
+  it("are seeded for the 16 devices whose raw exports group them, and survive a save", async () => {
+    const db = await appTestDb();
+    const m = await loadMappings(db);
+    const by = Object.fromEntries(m.map((d) => [d.outputName, d.site]));
+    expect(m.filter((d) => d.site).length).toBe(16);
+    expect([by.ERW01, by["Ottapidaram-ERW02"], by["RSMKP-06"], by["SMTKP-01"], by.NVL137, by.NVL242]).toEqual(["Uthiyur", "Ottapidaram", "RSMKP", "SMTKP", "JPP", undefined]);
+    await saveMappings(db, m.map((d) => (d.outputName === "NVL242" ? { ...d, site: "Space" } : d)), null, await mappingsVersion(db));
+    expect((await loadMappings(db)).find((d) => d.outputName === "NVL242")!.site).toBe("Space");
   });
 });
 

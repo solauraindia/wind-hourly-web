@@ -54,7 +54,7 @@ async function walk(entry: FileSystemEntry, prefix = ""): Promise<Picked[]> {
 
 const fmtSize = (b: number) => (b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
 
-export function ProcessFlow({ devices, quarter }: { devices: Device[]; quarter: string }) {
+export function ProcessFlow({ devices, quarter, reconciled = {} }: { devices: Device[]; quarter: string; reconciled?: Record<string, string[]> }) {
   const router = useRouter();
   const [picked, setPicked] = useState<Picked[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -120,6 +120,7 @@ export function ProcessFlow({ devices, quarter }: { devices: Device[]; quarter: 
 
   const chosen = Object.entries(mapping).filter(([, d]) => d);
   const duplicates = new Set(chosen.map(([, d]) => d).filter((d, i, a) => a.indexOf(d) !== i));
+  const replacesReconciled = [...new Set(chosen.map(([, d]) => d))].filter((d) => reconciled[d]);
 
   async function process() {
     const q = parseQuarter(quarter);
@@ -251,6 +252,17 @@ export function ProcessFlow({ devices, quarter }: { devices: Device[]; quarter: 
             duplicates={duplicates}
             onChange={(k, v) => setMapping((m) => ({ ...m, [k]: v }))}
           />
+        )}
+
+        {detected && phase !== "idle" && replacesReconciled.length > 0 && (
+          <div className="flex items-start gap-2 rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
+            <IconAlert className="mt-0.5 shrink-0" />
+            <span>
+              This replaces reconciled months:{" "}
+              {replacesReconciled.map((d) => `${devices.find((x) => x.id === d)?.outputName ?? d} ${reconciled[d].join(", ")}`).join(" · ")}.
+              Reconcile again afterwards if needed.
+            </span>
+          </div>
         )}
 
         {detected && phase !== "idle" && (

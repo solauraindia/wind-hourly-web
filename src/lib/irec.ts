@@ -97,11 +97,15 @@ export async function irecActuals(db: Db, quarter: Quarter, registryIds: string[
       actualMWh: [null, null, null],
       eligibleMWh: null,
       issuedMWh: null,
+      issuedMonthlyMWh: [null, null, null],
     });
     const i = periods.indexOf(Number(r.period));
     a.actualMWh[i] = n(r.actual);
     if (r.eligible !== null) a.eligibleMWh = (a.eligibleMWh ?? 0) + Number(r.eligible);
-    if (r.issued !== null) a.issuedMWh = (a.issuedMWh ?? 0) + Number(r.issued);
+    if (r.issued !== null) {
+      a.issuedMWh = (a.issuedMWh ?? 0) + Number(r.issued);
+      a.issuedMonthlyMWh![i] = Number(r.issued);
+    }
   }
   return out;
 }

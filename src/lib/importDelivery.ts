@@ -41,7 +41,7 @@ export function mergeMappings(existing: DeviceMapping[], incoming: DeviceMapping
   for (const inc of incoming) {
     const i = out.findIndex((d) => d.registryId === inc.registryId);
     if (i >= 0) {
-      out[i] = inc;
+      out[i] = { ...inc, site: inc.site ?? out[i].site };
       updated++;
     } else {
       out.push(inc);

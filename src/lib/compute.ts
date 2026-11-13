@@ -21,6 +21,8 @@ export interface HourlyPayload {
   missing: [number, string][];
   /** 10-min SCADA gaps inside the quarter: [start, end, slots] (naive-local ms) */
   gaps: [number, number, number][];
+  /** hour indices filled by a reconciliation (logger gaps estimated from evidence) */
+  filled?: number[];
 }
 
 /** Long zip/file names are kept for reference but capped. */

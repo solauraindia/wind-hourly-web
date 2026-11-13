@@ -71,6 +71,8 @@ export interface DeviceMapping {
   outputName: string;
   /** case-insensitive substring of the source file/folder name that disambiguates identical aliases */
   sourceHint?: string;
+  /** physical site; turbines sharing it are evidence for each other when filling logger gaps */
+  site?: string;
 }
 
 /** Mapping joined with irec master data — what the UI and the output files use. */

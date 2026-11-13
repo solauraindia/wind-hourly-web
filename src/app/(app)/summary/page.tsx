@@ -7,6 +7,7 @@ import { appDb, irecDb } from "@/lib/db";
 import { irecActuals } from "@/lib/irec";
 import { mwh, quarterLabel } from "@/lib/format";
 import { quarterFromSearch } from "@/lib/pageQuarter";
+import { activeReconciliations } from "@/lib/reconcileStore";
 import { loadDevicesSafe, loadResults } from "@/lib/store";
 import { buildSummary, summaryTotals } from "@/lib/summary";
 
@@ -21,7 +22,10 @@ function diffCell(diff: number | null, actual: number | null) {
 
 export default async function SummaryPage({ searchParams }: PageProps<"/summary">) {
   const quarter = await quarterFromSearch(searchParams);
-  const [{ devices, irecError }, results] = await Promise.all([loadDevicesSafe(appDb(), irecDb()), loadResults(appDb(), quarter.key)]);
+  const [{ devices, irecError }, results, recs] = await Promise.all([
+    loadDevicesSafe(appDb(), irecDb()), loadResults(appDb(), quarter.key), activeReconciliations(appDb(), quarter.key),
+  ]);
+  const monthKeys = quarter.months.map(([y, m]) => `${y}-${String(m).padStart(2, "0")}`);
   let actuals: Record<string, DeviceActuals> = {};
   let actualsError: string | null = irecError;
   if (!irecError) try {
@@ -106,7 +110,16 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
                       {r.actual.map((v, i) => <td key={i} className={`td text-right ${i === 0 ? "border-l" : ""}`}>{mwh(v)}</td>)}
                       <td className="td text-right font-medium">{mwh(r.actualTotal)}</td>
                       <td className="td border-l text-right">{mwh(r.eligible)}</td>
-                      {[0, 1, 2].map((i) => <td key={i} className={`td text-right ${i === 0 ? "border-l" : ""}`}>{r.hourly ? mwh(r.hourly[i]) : <span className="text-faint">—</span>}</td>)}
+                      {[0, 1, 2].map((i) => {
+                        const rec = recs.get(`${r.registryId}|${monthKeys[i]}`);
+                        return (
+                          <td key={i} className={`td text-right ${i === 0 ? "border-l" : ""}`}
+                            title={rec ? `Reconciled: ${mwh(rec.beforeKWh / 1000)} → ${mwh(rec.afterKWh / 1000)} MWh${rec.appliedBy ? ` by ${rec.appliedBy}` : ""}` : undefined}>
+                            {rec && <span className="mr-1.5 inline-block size-1.5 rounded-full bg-ok align-middle" aria-label="reconciled" />}
+                            {r.hourly ? mwh(r.hourly[i]) : <span className="text-faint">—</span>}
+                          </td>
+                        );
+                      })}
                       <td className="td text-right font-medium">{mwh(r.hourlyTotal)}</td>
                       {r.diffMonthly.map((v, i) => {
                         const c = diffCell(v, r.actual[i]);
@@ -137,7 +150,7 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
           </div>
         </section>
         <p className="text-[12.5px] text-faint">
-          All figures in MWh. Diff = actual − hourly, per month and for the quarter (amber when they differ by more than 10%, red when hourly is higher). Min = min(eligible, hourly total). Eligible = Σ eligible_gen (after banking); it falls back to the actual total when irec has none.
+          All figures in MWh. Diff = actual − hourly, per month and for the quarter (amber when they differ by more than 10%, red when hourly is higher). Min = min(eligible, hourly total). Eligible = Σ eligible_gen (after banking); it falls back to the actual total when irec has none. A green dot marks an hourly month that was reconciled.
         </p>
       </div>
     </>
