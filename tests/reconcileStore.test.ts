@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { quarterHours, type HourlyPayload } from "@/lib/compute";
 import { parseQuarter } from "@/lib/quarter";
-import { DEFAULT_RULE } from "@/lib/reconcile";
+import { DEFAULT_RULE, targetPct } from "@/lib/reconcile";
 import { activeReconciliations, applyItems, loadGrid, monthRange, previewItems, undoReconciliation, type Plan } from "@/lib/reconcileStore";
 import { loadHourly, loadResults, saveHourly } from "@/lib/store";
 import { appTestDb, irecFixture } from "./support/pglite";
@@ -19,6 +19,7 @@ function payload(registryId: string, kwh: number, gapAt: number[] = []): HourlyP
     missing: values.flatMap((v, i) => (v === null ? [[i, "logger offline"] as [number, string]] : [])), gaps: [],
   };
 }
+const APR_TARGET = 109.061 * (1 + targetPct(DEFAULT_RULE, DEV, "2026-04") / 100);
 const GAP = Array.from({ length: 10 }, (_, k) => aprFrom + 100 + k);
 
 async function setup() {
@@ -40,13 +41,15 @@ describe("reconcile store", () => {
     expect(row.cells[0].statementMWh).toBeCloseTo(71, 6);
   });
 
-  it("previews: fills the logger gap from the sibling, then scales to issued + 2%", async () => {
+  it("previews: fills the logger gap from the sibling, then scales to its target in issued +4% to +5%", async () => {
     const { app, irec } = await setup();
     const [p] = (await previewItems(app, irec, q2, [{ registryId: DEV, mi: 0, fill: true }], DEFAULT_RULE)) as Plan[];
     expect(p.result.filledIdx).toHaveLength(10);
     expect(p.result.fillKwh).toBeCloseTo(1000, 3);
-    expect(p.result.afterKwh / 1000).toBeCloseTo(109.061 * 1.02, 3);
-    expect(p.afterPct).toBeCloseTo(2, 6);
+    expect(p.result.afterKwh / 1000).toBeCloseTo(APR_TARGET, 3);
+    expect(p.afterPct).toBeCloseTo(p.targetPct, 6);
+    expect(p.targetPct).toBeGreaterThanOrEqual(4);
+    expect(p.targetPct).toBeLessThanOrEqual(5);
     expect(p.inBand).toBe(true);
     expect(p.daily.before).toHaveLength(30);
   });
@@ -57,7 +60,7 @@ describe("reconcile store", () => {
     const [out] = await applyItems(app, irec, q2, [{ registryId: DEV, mi: 0, fill: true, processedAt: before.processedAt }], DEFAULT_RULE, "a@x");
     expect(out.status).toBe("applied");
     const after = (await loadResults(app, q2.key))[DEV];
-    expect(after.monthlyMWh[0]).toBeCloseTo(109.061 * 1.02, 3);
+    expect(after.monthlyMWh[0]).toBeCloseTo(APR_TARGET, 3);
     expect(after.monthlyMWh.slice(1)).toEqual(before.monthlyMWh.slice(1));
     expect(after.processedAt).toBe(before.processedAt);
     const p = (await loadHourly(app, DEV, q2))!;
@@ -86,6 +89,17 @@ describe("reconcile store", () => {
     expect(out[3].reason).toMatch(/Nothing issued/);
     const again = await applyItems(app, irec, q2, [{ registryId: DEV, mi: 2, fill: true, processedAt: at }], DEFAULT_RULE, null);
     expect(again[0].reason).toMatch(/Already reconciled/);
+  });
+
+  it("a month above issued can be picked and is scaled down to its target", async () => {
+    const { app, irec } = await setup();
+    await saveHourly(app, payload(DEV, 200), "a@x"); // April: 144 MWh against 109.061 issued
+    const row = (await loadGrid(app, irec, q2)).find((r) => r.registryId === DEV)!;
+    expect(row.cells[0].status).toBe("covered");
+    const [out] = await applyItems(app, irec, q2, [{ registryId: DEV, mi: 0, fill: true, processedAt: await processedAt(app) }], DEFAULT_RULE, null);
+    expect(out.status).toBe("applied");
+    const after = (await loadResults(app, q2.key))[DEV];
+    expect(after.monthlyMWh[0]).toBeCloseTo(APR_TARGET, 3);
   });
 
   it("needs a note when issued is above actual (banking)", async () => {

@@ -3,7 +3,7 @@ import type { HourlyPayload } from "./compute";
 import type { Db } from "./db";
 import { irecActuals, irecDevices } from "./irec";
 import type { Quarter } from "./quarter";
-import { reconcileMonth, type MonthResult, type Rule } from "./reconcile";
+import { reconcileMonth, targetPct, type MonthResult, type Rule } from "./reconcile";
 import { loadHourly, loadMappings, loadResults, summarize } from "./store";
 import { HOUR, LOCAL_OFFSET_MIN, MINUTE, naive } from "./time";
 import type { DeviceMapping, HourlyResult } from "./types";
@@ -139,6 +139,8 @@ export interface Plan {
   processedAt: string;
   fill: boolean;
   result: Omit<MonthResult, "values">;
+  /** this month's target, % above issued */
+  targetPct: number;
   targetMWh: number;
   afterPct: number;
   inBand: boolean;
@@ -203,8 +205,6 @@ async function planOne(app: Db, ctx: Context, item: Item, rule: Rule): Promise<{
 
   const [from, to] = monthRange(quarter, item.mi);
   const hours = p.kwh.slice(from, to);
-  const before = hours.reduce<number>((s, v) => s + (v ?? 0), 0) / 1000;
-  if (before >= issuedMWh) return skip("Statement already covers issued");
 
   const siblings: (number | null)[][] = [];
   if (mapping.site) {
@@ -214,7 +214,8 @@ async function planOne(app: Db, ctx: Context, item: Item, rule: Rule): Promise<{
       if (sp) siblings.push(sp.kwh.slice(from, to));
     }
   }
-  const targetMWh = issuedMWh * (1 + rule.marginPct / 100);
+  const tPct = targetPct(rule, item.registryId, month);
+  const targetMWh = issuedMWh * (1 + tPct / 100);
   const res = reconcileMonth({ hours, siblings, ratingKwh: ratingMw * 1000, targetKwh: targetMWh * 1000, fill: item.fill });
 
   const days = Math.round((to - from) / 24);
@@ -239,7 +240,7 @@ async function planOne(app: Db, ctx: Context, item: Item, rule: Rule): Promise<{
     plan: {
       registryId: item.registryId, outputName: mapping.outputName, mi: item.mi, month, issuedMWh,
       actualMWh: a?.actualMWh[item.mi] ?? null, banked: a?.actualMWh[item.mi] != null && issuedMWh > a.actualMWh[item.mi]! + 1e-6,
-      ratingMw, processedAt: r.processedAt, fill: item.fill, result: summary, targetMWh, afterPct,
+      ratingMw, processedAt: r.processedAt, fill: item.fill, result: summary, targetPct: tPct, targetMWh, afterPct,
       inBand: round2(afterPct) >= rule.bandMinPct && round2(afterPct) <= rule.bandMaxPct,
       fillShare: added > 0 ? res.fillKwh / added : null, daily,
     },
@@ -344,7 +345,7 @@ export async function applyItems(app: Db, irec: Db, quarter: Quarter, items: App
                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
           params: [
             id, item.registryId, quarter.key, plan.month, plan.issuedMWh, plan.actualMWh, plan.ratingMw, r.beforeKwh, r.afterKwh,
-            r.shortKwh, rule.marginPct, rule.bandMinPct, rule.bandMaxPct, item.fill, r.filledIdx.length, r.hoursCalm, r.hoursNoEvidence,
+            r.shortKwh, plan.targetPct, rule.bandMinPct, rule.bandMaxPct, item.fill, r.filledIdx.length, r.hoursCalm, r.hoursNoEvidence,
             r.fillKwh, r.scaleKwh, r.factor, r.hoursRaised, r.hoursAtRating, JSON.stringify(filledMissing), note, user,
           ],
         },

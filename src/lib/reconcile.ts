@@ -1,23 +1,30 @@
 /**
- * Reconciliation math: bring a month whose hourly statement is short of the
- * issued (metered) volume up to a target, in two steps.
+ * Reconciliation math: bring a month's hourly statement to a target near the
+ * issued (metered) volume. A month short of the target is raised in two steps:
  *
  * 1. Fill hours the logger missed, from evidence: sibling turbines at the same
  *    site, or this turbine's own readings around the gap. Calm hours (no wind)
  *    and hours without evidence stay empty.
  * 2. Scale: one factor on every producing hour, never above the rating.
  *
+ * A month above the target is only scaled down (one factor below 1); gaps stay empty.
+ *
  * Pure functions on one month's hours (index = hour of the month, so
  * index % 24 is the hour of day). No randomness: same input, same output.
  */
 
 export interface Rule {
+  /** each month's target is picked between issued +marginPct and +marginMaxPct */
   marginPct: number;
+  marginMaxPct: number;
   bandMinPct: number;
   bandMaxPct: number;
 }
 
-export const DEFAULT_RULE: Rule = { marginPct: 2, bandMinPct: 1, bandMaxPct: 3 };
+export const DEFAULT_RULE: Rule = { marginPct: 4, marginMaxPct: 5, bandMinPct: -5, bandMaxPct: 5 };
+
+/** Rule values (target and band) must stay within ±this % of issued. */
+export const RULE_LIMIT_PCT = 5;
 
 /** "Calm" = below this share of the rating. */
 export const CALM_SHARE = 0.02;
@@ -25,12 +32,27 @@ export const CALM_SHARE = 0.02;
 export function validateRule(input: unknown): Rule | string {
   if (!input || typeof input !== "object") return "Missing reconcile rule";
   const r = input as Record<string, unknown>;
-  const [m, lo, hi] = [r.marginPct, r.bandMinPct, r.bandMaxPct];
-  if (![m, lo, hi].every((v) => typeof v === "number" && Number.isFinite(v))) return "Rule values must be numbers";
-  const rule = { marginPct: m as number, bandMinPct: lo as number, bandMaxPct: hi as number };
-  if (rule.bandMinPct < 0 || rule.bandMaxPct > 10) return "Rule values must be between 0% and 10%";
-  if (!(rule.bandMinPct <= rule.marginPct && rule.marginPct <= rule.bandMaxPct)) return "The band must contain the target margin";
+  const [m, mx, lo, hi] = [r.marginPct, r.marginMaxPct, r.bandMinPct, r.bandMaxPct];
+  if (![m, mx, lo, hi].every((v) => typeof v === "number" && Number.isFinite(v))) return "Rule values must be numbers";
+  const rule = { marginPct: m as number, marginMaxPct: mx as number, bandMinPct: lo as number, bandMaxPct: hi as number };
+  if (rule.bandMinPct < -RULE_LIMIT_PCT || rule.bandMaxPct > RULE_LIMIT_PCT) return `Rule values must be within ±${RULE_LIMIT_PCT}% of issued`;
+  if (rule.marginPct > rule.marginMaxPct) return "The target range is reversed";
+  if (!(rule.bandMinPct <= rule.marginPct && rule.marginMaxPct <= rule.bandMaxPct)) return "The band must contain the target range";
   return rule;
+}
+
+/**
+ * The month's target, % above issued: a spread-out pick inside the rule's target
+ * range, seeded by device and month so a preview and its apply agree. 2 decimals.
+ */
+export function targetPct(rule: Rule, registryId: string, month: string): number {
+  let h = 0x811c9dc5; // FNV-1a
+  for (const c of `${registryId}|${month}`) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0;
+  // finalizer: FNV's high bits barely move when only the month differs
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  h = (h ^ (h >>> 16)) >>> 0;
+  return Math.round((rule.marginPct + (rule.marginMaxPct - rule.marginPct) * (h / 2 ** 32)) * 100) / 100;
 }
 
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -98,10 +120,25 @@ function settle(values: (number | null)[], targetKwh: number, adjustable: number
   if (!residual || !adjustable.length) return;
   const i = adjustable.reduce((best, j) => ((values[j] as number) < (values[best] as number) ? j : best), adjustable[0]);
   const v = round3((values[i] as number) + residual);
-  if (v <= ratingKwh) values[i] = v;
+  if (v >= 0 && v <= ratingKwh) values[i] = v;
+}
+
+/** Lower a month above the target: one factor below 1 on every producing hour. */
+function scaleDown(values: (number | null)[], targetKwh: number, ratingKwh: number) {
+  const out = [...values];
+  const adjustable = out.flatMap((v, i) => (v != null && v > 0 ? [i] : []));
+  const base = adjustable.reduce((s, i) => s + (out[i] as number), 0);
+  const need = targetKwh - (total(out) - base);
+  const factor = base > 0 ? Math.max(need, 0) / base : 1;
+  for (const i of adjustable) out[i] = round3((out[i] as number) * factor);
+  settle(out, targetKwh, adjustable, ratingKwh);
+  const hoursRaised = adjustable.filter((i) => out[i] !== values[i]).length;
+  const afterKwh = total(out);
+  return { values: out, factor, hoursRaised, hoursAtRating: 0, afterKwh, shortKwh: 0 };
 }
 
 export function scaleMonth(values: (number | null)[], targetKwh: number, ratingKwh: number) {
+  if (total(values) > targetKwh) return scaleDown(values, targetKwh, ratingKwh);
   const out = [...values];
   const adjustable = out.flatMap((v, i) => (v != null && v > 0 && v < ratingKwh ? [i] : []));
   const fixed = total(out.map((v, i) => (adjustable.includes(i) ? null : v)));
@@ -153,8 +190,10 @@ export interface MonthResult {
   hoursCalm: number;
   hoursNoEvidence: number;
   fillKwh: number;
+  /** energy the scaling step added (negative when scaled down) */
   scaleKwh: number;
   factor: number;
+  /** hours the scaling step changed */
   hoursRaised: number;
   hoursAtRating: number;
 }
@@ -166,7 +205,11 @@ export function reconcileMonth(m: MonthInput): MonthResult {
     values, beforeKwh, afterKwh: total(values), shortKwh: 0, filledIdx: [], hoursCalm: 0, hoursNoEvidence: 0,
     fillKwh: 0, scaleKwh: 0, factor: 1, hoursRaised: 0, hoursAtRating: 0, ...over,
   });
-  if (beforeKwh >= m.targetKwh) return result({});
+  if (beforeKwh === m.targetKwh) return result({});
+  if (beforeKwh > m.targetKwh) {
+    const s = scaleMonth(values, m.targetKwh, m.ratingKwh);
+    return result({ values: s.values, afterKwh: s.afterKwh, scaleKwh: s.afterKwh - beforeKwh, factor: s.factor, hoursRaised: s.hoursRaised });
+  }
 
   let filledIdx: number[] = [];
   let fillKwh = 0;

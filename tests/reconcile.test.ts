@@ -1,15 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RULE, estimateMissing, reconcileMonth, scaleMonth, validateRule } from "@/lib/reconcile";
+import { DEFAULT_RULE, estimateMissing, reconcileMonth, scaleMonth, targetPct, validateRule } from "@/lib/reconcile";
 
 const sum = (v: (number | null)[]) => v.reduce<number>((s, x) => s + (x ?? 0), 0);
 const RATING = 2700;
 
 describe("validateRule", () => {
-  it("accepts the default and rejects a band that excludes the margin", () => {
-    expect(validateRule(DEFAULT_RULE)).toEqual({ marginPct: 2, bandMinPct: 1, bandMaxPct: 3 });
-    expect(validateRule({ marginPct: 2, bandMinPct: 2.5, bandMaxPct: 3 })).toMatch(/band/);
-    expect(validateRule({ marginPct: 11, bandMinPct: 1, bandMaxPct: 12 })).toMatch(/10/);
+  it("accepts the default and rejects a band that excludes the target range", () => {
+    expect(validateRule(DEFAULT_RULE)).toEqual({ marginPct: 4, marginMaxPct: 5, bandMinPct: -5, bandMaxPct: 5 });
+    expect(validateRule({ marginPct: 2, marginMaxPct: 2, bandMinPct: 2.5, bandMaxPct: 3 })).toMatch(/band/);
+    expect(validateRule({ marginPct: 4, marginMaxPct: 5, bandMinPct: -5, bandMaxPct: 4.5 })).toMatch(/band/);
+    expect(validateRule({ marginPct: 5, marginMaxPct: 4, bandMinPct: -5, bandMaxPct: 5 })).toMatch(/reversed/);
+    expect(validateRule({ marginPct: -3, marginMaxPct: -3, bandMinPct: -5, bandMaxPct: 0 })).toEqual({ marginPct: -3, marginMaxPct: -3, bandMinPct: -5, bandMaxPct: 0 });
+    expect(validateRule({ marginPct: 4, marginMaxPct: 6, bandMinPct: -5, bandMaxPct: 6 })).toMatch(/±5%/);
+    expect(validateRule({ marginPct: 2, marginMaxPct: 2, bandMinPct: -6, bandMaxPct: 5 })).toMatch(/±5%/);
+    expect(validateRule({ marginPct: 2, bandMinPct: -5, bandMaxPct: 5 })).toMatch(/numbers/);
     expect(validateRule("x")).toMatch(/rule/);
+  });
+});
+
+describe("targetPct", () => {
+  const months = ["2026-04", "2026-05", "2026-06"];
+  const ids = ["1.5MWIND016", "1.5MWIND019", "2.7MES20003", "2.7MES20004", "2.1MES20005"];
+  const picks = ids.flatMap((id) => months.map((m) => targetPct(DEFAULT_RULE, id, m)));
+
+  it("stays inside the target range, at 2 decimals, and spreads across it", () => {
+    for (const t of picks) {
+      expect(t).toBeGreaterThanOrEqual(4);
+      expect(t).toBeLessThanOrEqual(5);
+      expect(Math.round(t * 100) / 100).toBe(t);
+    }
+    expect(new Set(picks).size).toBeGreaterThan(10);
+  });
+
+  it("is the same every time for a device and month", () => {
+    expect(targetPct(DEFAULT_RULE, ids[0], months[0])).toBe(picks[0]);
+  });
+
+  it("is the fixed value when the range is a single point", () => {
+    expect(targetPct({ ...DEFAULT_RULE, marginPct: 3, marginMaxPct: 3 }, ids[0], months[0])).toBe(3);
   });
 });
 
@@ -83,6 +111,13 @@ describe("scaleMonth", () => {
     expect(r.shortKwh).toBe(300);
   });
 
+  it("scales down by one factor and lands exactly on the target", () => {
+    const r = scaleMonth([1.1111, 2.2222, null, 3.3333], 5.555, RATING);
+    for (const v of r.values) if (v !== null) expect(Math.round(v * 1000) / 1000).toBe(v);
+    expect(sum(r.values)).toBeCloseTo(5.555, 6);
+    expect(r.factor).toBeLessThan(1);
+  });
+
   it("rounds to 3 decimals without missing the target", () => {
     const r = scaleMonth([1.1111, 2.2222, 3.3333], 7.777, RATING);
     for (const v of r.values) expect(Math.round((v as number) * 1000) / 1000).toBe(v);
@@ -121,9 +156,23 @@ describe("reconcileMonth", () => {
     expect(r.values[0]).toBeCloseTo(550, 3);
   });
 
-  it("leaves a month at or above the target unchanged", () => {
-    const r = reconcileMonth({ hours: [700, 700], siblings: [], ratingKwh: RATING, targetKwh: 1000, fill: true });
-    expect(r.values).toEqual([700, 700]);
-    expect(r.afterKwh).toBe(1400);
+  it("leaves a month exactly at the target unchanged", () => {
+    const r = reconcileMonth({ hours: [500, 500], siblings: [], ratingKwh: RATING, targetKwh: 1000, fill: true });
+    expect(r.values).toEqual([500, 500]);
+    expect(r.factor).toBe(1);
+  });
+
+  it("scales a month above the target down, without filling gaps", () => {
+    const r = reconcileMonth({ hours: [700, null, 2700, 0], siblings: [[1400, 1400, 2700, 0]], ratingKwh: RATING, targetKwh: 2720, fill: true });
+    expect(r.values[1]).toBeNull();
+    expect(r.values[3]).toBe(0);
+    expect(r.filledIdx).toEqual([]);
+    expect(r.factor).toBeCloseTo(0.8, 6);
+    expect(r.values[0]).toBeCloseTo(560, 3);
+    expect(r.values[2]).toBeCloseTo(2160, 3);
+    expect(r.afterKwh).toBeCloseTo(2720, 3);
+    expect(r.scaleKwh).toBeCloseTo(-680, 3);
+    expect(r.fillKwh).toBe(0);
+    expect(r.shortKwh).toBe(0);
   });
 });

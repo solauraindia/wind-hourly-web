@@ -18,7 +18,7 @@ export default async function ReconcilePage({ searchParams }: PageProps<"/reconc
     <>
       <PageHeader
         title="Reconcile"
-        subtitle="Bring months whose hourly statement falls short of issued up to issued, within each turbine's rating."
+        subtitle="Bring any month's hourly statement to within ±5% of issued: short months are raised (never above the turbine's rating), months above are lowered."
         quarter={quarter.key}
       />
       <div className="mx-auto max-w-[1400px] space-y-5 px-6 py-6 pb-28">
