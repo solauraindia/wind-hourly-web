@@ -50,13 +50,61 @@ export function validateRule(input: unknown): Rule | string {
  * range, seeded by device and month so a preview and its apply agree. 2 decimals.
  */
 export function targetPct(rule: Rule, registryId: string, month: string): number {
+  return Math.round((rule.marginPct + (rule.marginMaxPct - rule.marginPct) * seeded(`${registryId}|${month}`)) * 100) / 100;
+}
+
+/** A spread-out number in [0, 1) fixed by `key`: same key, same number. */
+export function seeded(key: string): number {
   let h = 0x811c9dc5; // FNV-1a
-  for (const c of `${registryId}|${month}`) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0;
-  // finalizer: FNV's high bits barely move when only the month differs
+  for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0;
+  // finalizer: FNV's high bits barely move when only the last characters differ
   h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
   h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
-  h = (h ^ (h >>> 16)) >>> 0;
-  return Math.round((rule.marginPct + (rule.marginMaxPct - rule.marginPct) * (h / 2 ** 32)) * 100) / 100;
+  return ((h ^ (h >>> 16)) >>> 0) / 2 ** 32;
+}
+
+/** A reading at or above this share of the rating counts as full load. */
+export const FULL_LOAD_SHARE = 0.95;
+/** Full-load readings needed before capped hours follow them. */
+export const MIN_FULL_LOAD = 12;
+
+/** Full-load hours never go above the rating by more than this, picked per device and month. */
+export const OVER_RATING_PCT: [number, number] = [0.1, 0.2];
+
+/**
+ * Hours that scaling pushed to the rating take the shape of the turbine's own
+ * full-load readings instead of a flat rating: each takes a reading's deviation
+ * from their mean, scaled so none goes more than OVER_RATING_PCT above the
+ * rating, and they average the rating, so the month total is unchanged.
+ * Seeded per hour by `seed`. Returns how many hours were shaped.
+ */
+export function spreadFullLoad(values: (number | null)[], capped: number[], fullLoadKwh: number[], ratingKwh: number, seed: string, dp: number) {
+  const pool = fullLoadKwh.filter((v) => v >= FULL_LOAD_SHARE * ratingKwh);
+  if (pool.length < MIN_FULL_LOAD || !capped.length) return 0;
+  const [minPct, maxPct] = OVER_RATING_PCT;
+  const unit = 10 ** -dp;
+  const hi = Math.floor((ratingKwh * (1 + (minPct + (maxPct - minPct) * seeded(`${seed}|cap`)) / 100)) / unit) * unit;
+  const picks = capped.map((i) => pool[Math.floor(seeded(`${seed}|${i}`) * pool.length)]);
+  const mean = picks.reduce((a, b) => a + b, 0) / picks.length;
+  const dev = picks.map((v) => v - mean);
+  const top = Math.max(...dev);
+  const scale = top > 0 ? Math.min(1, (hi - ratingKwh) / top) : 1;
+  const next = dev.map((d) => Math.min(roundTo(ratingKwh + d * scale, dp), hi));
+  const lo = Math.min(...next);
+  // land the capped hours' sum exactly where it was, one unit at a time within [lo, hi]
+  let units = Math.round((capped.length * ratingKwh - next.reduce((a, b) => a + b, 0)) / unit);
+  for (let k = 0, stuck = 0; units !== 0 && stuck < next.length; k = (k + 1) % next.length) {
+    const v = roundTo(next[k] + Math.sign(units) * unit, dp);
+    if (v < lo || v > hi) {
+      stuck++;
+      continue;
+    }
+    stuck = 0;
+    next[k] = v;
+    units -= Math.sign(units);
+  }
+  capped.forEach((i, k) => (values[i] = next[k]));
+  return capped.length;
 }
 
 const total = (v: (number | null)[]) => v.reduce<number>((s, x) => s + (x ?? 0), 0);
@@ -182,6 +230,10 @@ export interface MonthInput {
   ratingKwh: number;
   targetKwh: number;
   fill: boolean;
+  /** the turbine's own readings (raw), whose full-load hours shape hours scaled to the rating */
+  fullLoadKwh?: number[];
+  /** seeds the full-load draw, e.g. `registryId|month` */
+  seed?: string;
 }
 
 export interface MonthResult {
@@ -240,6 +292,9 @@ export function reconcileMonth(m: MonthInput): MonthResult {
     fillKwh = total(values) - beforeKwh;
   }
   const s = scaleMonth(values, target, m.ratingKwh, dp);
+  const capped = s.values.flatMap((v, i) => (v === m.ratingKwh && m.hours[i] !== m.ratingKwh ? [i] : []));
+  spreadFullLoad(s.values, capped, m.fullLoadKwh ?? [], m.ratingKwh, m.seed ?? "", dp);
+  s.afterKwh = total(s.values);
   return {
     values: s.values, beforeKwh, afterKwh: s.afterKwh, shortKwh: s.shortKwh, filledIdx, hoursCalm, hoursNoEvidence,
     fillKwh, scaleKwh: s.afterKwh - beforeKwh - fillKwh, factor: s.factor,

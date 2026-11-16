@@ -202,7 +202,7 @@ export function ReconcileFlow({ quarter, monthLabels, rows }: { quarter: string;
         </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-3 text-[13px] text-muted">
           <span>
-            Rule: scale each picked month to <b className="font-medium text-ink">issued {pct(rule.marginPct)} to {pct(rule.marginMaxPct)}</b> (picked per device and month) · band <b className="font-medium text-ink">{pct(rule.bandMinPct)} to {pct(rule.bandMaxPct)}</b> · never above the turbine rating
+            Rule: scale each picked month to <b className="font-medium text-ink">issued {pct(rule.marginPct)} to {pct(rule.marginMaxPct)}</b> (picked per device and month) · band <b className="font-medium text-ink">{pct(rule.bandMinPct)} to {pct(rule.bandMaxPct)}</b> · hours reaching the rating follow the turbine&apos;s own full-load readings (at most +0.1–0.2%), averaging the rating
           </span>
           <button className="ml-auto font-medium text-accent" onClick={() => setRuleOpen((o) => !o)} aria-expanded={ruleOpen}>{ruleOpen ? "Done" : "Change rule"}</button>
         </div>
@@ -461,7 +461,7 @@ function Detail({ plan: p, label }: { plan: Plan; label: string }) {
         <dt className="text-muted">No evidence</dt><dd className="num text-right">{p.result.hoursNoEvidence}</dd>
         <dt className="text-muted">Hours scaled</dt><dd className="num text-right">{p.result.hoursRaised}</dd>
         <dt className="text-muted">Factor</dt><dd className="num text-right">×{p.result.factor.toFixed(4)}</dd>
-        <dt className="text-muted">At rating</dt><dd className="num text-right">{p.result.hoursAtRating} h · {(p.ratingMw * 1000).toLocaleString("en-IN")} kWh/h</dd>
+        <dt className="text-muted">At full load</dt><dd className="num text-right">{p.result.hoursAtRating} h · {(p.ratingMw * 1000).toLocaleString("en-IN")} kWh/h</dd>
       </dl>
     </div>
   );

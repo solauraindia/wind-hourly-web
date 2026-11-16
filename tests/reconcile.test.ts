@@ -185,3 +185,32 @@ describe("reconcileMonth", () => {
     expect(r.shortKwh).toBe(0);
   });
 });
+
+describe("spreadFullLoad", () => {
+  // the turbine's own readings: some calm, some at full load around the rating
+  const raw = [100, 900, 1500, 2650.4, 2671, 2688.2, 2694, 2702.5, 2711, 2723.9, 2736, 2741.3, 2690, 2705, 2668.8, 2730];
+
+  it("capped hours follow the turbine's full-load readings and still average the rating", () => {
+    const hours = [1000, 2000, null, 1500, 2600, 2650];
+    const r = reconcileMonth({ hours, siblings: [], ratingKwh: RATING, targetKwh: 11000, fill: false, fullLoadKwh: raw, seed: "dev|2026-08" });
+    const capped = r.values.filter((v) => v !== null && v >= 2600 && !hours.includes(v));
+    expect(r.afterKwh).toBeCloseTo(11000, 6);
+    expect(r.hoursAtRating).toBe(2);
+    expect(r.hoursAtRating).toBeGreaterThan(0);
+    expect(r.values).not.toContain(RATING);
+    for (const v of r.values) if (v !== null && v > 2000) expect(v).toBeLessThanOrEqual(RATING * 1.002);
+    expect(r.values.some((v) => v !== null && v > RATING)).toBe(true);
+    expect(new Set(capped).size).toBe(capped.length);
+  });
+
+  it("is the same every time for a device and month, and differs between months", () => {
+    const run = (seed: string) => reconcileMonth({ hours: [1000, 2000, 1500, 2600, 2650], siblings: [], ratingKwh: RATING, targetKwh: 12000, fill: false, fullLoadKwh: raw, seed }).values;
+    expect(run("dev|2026-08")).toEqual(run("dev|2026-08"));
+    expect(run("dev|2026-08")).not.toEqual(run("dev|2026-09"));
+  });
+
+  it("keeps the rating when the turbine has too few full-load readings", () => {
+    const r = reconcileMonth({ hours: [1000, 2000, 1500], siblings: [], ratingKwh: RATING, targetKwh: 8000, fill: false, fullLoadKwh: raw.slice(0, 6), seed: "x" });
+    expect(r.values).toContain(RATING);
+  });
+});

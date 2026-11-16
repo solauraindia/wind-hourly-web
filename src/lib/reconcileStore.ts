@@ -216,7 +216,12 @@ async function planOne(app: Db, ctx: Context, item: Item, rule: Rule): Promise<{
   }
   const tPct = targetPct(rule, item.registryId, month);
   const targetMWh = issuedMWh * (1 + tPct / 100);
-  const res = reconcileMonth({ hours, siblings, ratingKwh: ratingMw * 1000, targetKwh: targetMWh * 1000, fill: item.fill });
+  // the turbine's own readings this quarter, leaving out months whose values are reconciled
+  const recMonths = ([0, 1, 2] as MonthIdx[]).filter((m) => m !== item.mi && ctx.recs.has(`${item.registryId}|${monthKey(quarter, m)}`)).map((m) => monthRange(quarter, m));
+  const fullLoadKwh = p.kwh.filter((v, i): v is number => v !== null && !recMonths.some(([a, b]) => i >= a && i < b));
+  const res = reconcileMonth({
+    hours, siblings, ratingKwh: ratingMw * 1000, targetKwh: targetMWh * 1000, fill: item.fill, fullLoadKwh, seed: `${item.registryId}|${month}`,
+  });
 
   const days = Math.round((to - from) / 24);
   const daily = { before: new Array<number>(days).fill(0), fill: new Array<number>(days).fill(0), scale: new Array<number>(days).fill(0) };
