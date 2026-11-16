@@ -47,10 +47,10 @@ describe("app database", () => {
     const db = await appTestDb();
     const first = await saveHourly(db, payload("1.5MWIND016", () => 1), "a@x.in");
     expect(first.totalMWh).toBeCloseTo(2.184, 9);
-    const p = payload("1.5MWIND016", (i) => (i % 100 === 7 ? null : 123.456));
+    const p = payload("1.5MWIND016", (i) => (i % 100 === 7 ? null : 123.4));
     const r = await saveHourly(db, p, "b@x.in");
     expect(r.hoursMissing).toBe(22);
-    expect(r.totalMWh).toBe(Math.round((2184 - 22) * 123456) / 1e6);
+    expect(r.totalMWh).toBe(Math.round((2184 - 22) * 1234) / 1e4);
     const back = await loadHourly(db, "1.5MWIND016", q2);
     expect(back).toEqual(p);
     const results = await loadResults(db, q2.key);
@@ -109,7 +109,8 @@ describe.skipIf(!existsSync(RAW))("end to end", () => {
     const { series } = await detectAndParse([{ name: "RSMKP-04 MEAN FILE APRL TO JUNE.zip", data: readFileSync(RAW) }]);
     const [app, irec] = await Promise.all([appTestDb(), irecFixture()]);
     const result = await saveHourly(app, computeHourly(series[0], "1.5MWIND016", q2), null);
-    expect(result.totalMWh).toBeCloseTo(1232.327614, 6);
+    // the Python reference kept 0.001 kWh (1232.327614); hours now keep the raw 0.1 kWh at most
+    expect(result.totalMWh).toBeCloseTo(1232.3275, 6);
     const device = (await loadDevices(app, irec)).find((d) => d.registryId === "1.5MWIND016")!;
     const xlsx = await renderMeterXlsx((await loadHourly(app, "1.5MWIND016", q2))!, device, q2, "MWh");
     const wb = new ExcelJS.Workbook();
@@ -120,7 +121,13 @@ describe.skipIf(!existsSync(RAW))("end to end", () => {
       if (n > 1) sum += Number(row.getCell(4).value);
     });
     expect(ws.rowCount - 1).toBe(2164);
-    expect(sum).toBeCloseTo(1232.327614, 6);
+    expect(sum).toBeCloseTo(1232.3275, 6);
+    // MWh with 3 decimals (register hours, whole kWh) or 4 (power-estimated hours, 0.1 kWh)
+    const places = new Set<number>();
+    ws.eachRow((row, n) => {
+      if (n > 1) places.add((String(row.getCell(4).value).split(".")[1] ?? "").length);
+    });
+    expect(Math.max(...places)).toBeLessThanOrEqual(4);
     expect(ws.getRow(2).values).toEqual([
       undefined, "2026-04-01T00:00:00+05:30", "Asia/Kolkata", "2026-03-31T18:30:00Z", ws.getRow(2).getCell(4).value,
       "MWh", 59244760157, "1.5 MW at Seepalakottai Village, HTSC 0157", "1.5MWIND016",

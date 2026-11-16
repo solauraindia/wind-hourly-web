@@ -30,8 +30,25 @@ export const SOURCE_NAME_MAX = 200;
 
 export const quarterHours = (q: Quarter) => Math.round((q.end - q.start) / HOUR);
 
-/** kWh are stored with 3 decimals; MWh output then has exactly 6. */
-export const round3 = (v: number) => Math.round(v * 1000) / 1000;
+/**
+ * Hourly kWh keep the raw files' precision: registers count whole kWh and power
+ * is logged to about 0.1 kW, so an hour is whole kWh (3 decimals in MWh) or
+ * 0.1 kWh (4 decimals in MWh), never finer.
+ */
+export const KWH_DECIMALS = 1;
+export const roundTo = (v: number, decimals: number) => Math.round(v * 10 ** decimals) / 10 ** decimals;
+export const roundKwh = (v: number) => roundTo(v, KWH_DECIMALS);
+
+/** Decimals the values actually use (0 for whole kWh), at most KWH_DECIMALS. */
+export function decimalsOf(values: (number | null)[]): number {
+  let d = 0;
+  for (const v of values) {
+    if (v === null) continue;
+    while (d < KWH_DECIMALS && Math.abs(roundTo(v, d) - v) > 1e-9) d++;
+    if (d === KWH_DECIMALS) break;
+  }
+  return d;
+}
 
 export function computeHourly(series: Series, registryId: string, quarter: Quarter): HourlyPayload {
   const build = buildHourly(series);
@@ -46,7 +63,7 @@ export function computeHourly(series: Series, registryId: string, quarter: Quart
       missing.push([i, build.dropped.get(ts) ?? "no source data for this hour"]);
       continue;
     }
-    kwh[i] = round3(v);
+    kwh[i] = roundKwh(v);
     if (build.estimated.has(ts)) estimated.push(i);
   }
   const inQ = (ts: number) => ts >= quarter.start && ts < quarter.end;

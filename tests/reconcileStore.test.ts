@@ -47,7 +47,7 @@ describe("reconcile store", () => {
     expect(p.result.filledIdx).toHaveLength(10);
     expect(p.result.fillKwh).toBeCloseTo(1000, 3);
     expect(p.result.afterKwh / 1000).toBeCloseTo(APR_TARGET, 3);
-    expect(p.afterPct).toBeCloseTo(p.targetPct, 6);
+    expect(p.afterPct).toBeCloseTo(p.targetPct, 3); // whole-kWh hours: the total lands to the nearest kWh
     expect(p.targetPct).toBeGreaterThanOrEqual(4);
     expect(p.targetPct).toBeLessThanOrEqual(5);
     expect(p.inBand).toBe(true);

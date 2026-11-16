@@ -1,6 +1,6 @@
 import "server-only";
 import { MAX_HOURLY_KWH } from "./hourly";
-import { SOURCE_NAME_MAX, quarterHours, round3, type HourlyPayload } from "./compute";
+import { SOURCE_NAME_MAX, quarterHours, roundKwh, type HourlyPayload } from "./compute";
 import type { Db } from "./db";
 import { irecDevices, type IrecDevice } from "./irec";
 import { monthIndexInQuarter, parseQuarter, type Quarter } from "./quarter";
@@ -110,7 +110,7 @@ export async function saveMappings(db: Db, mappings: DeviceMapping[], user: stri
 
 /**
  * Reject anything that could not have come from computeHourly and return a
- * normalised copy: kWh rounded to 3 decimals, source name capped at 200 chars, `estimated` ⊆ hours with a value,
+ * normalised copy: kWh rounded to the raw precision (see roundKwh), source name capped at 200 chars, `estimated` ⊆ hours with a value,
  * `missing` = exactly the hours without one, gaps inside the quarter.
  */
 export function validatePayload(input: HourlyPayload): { payload: HourlyPayload; quarter: Quarter } {
@@ -125,7 +125,7 @@ export function validatePayload(input: HourlyPayload): { payload: HourlyPayload;
   const kwh = p.kwh.map((v) => {
     if (v === null) return null;
     if (typeof v !== "number" || !Number.isFinite(v) || Math.abs(v) > MAX_HOURLY_KWH) throw new Error(`hourly value out of range: ${v}`);
-    return round3(v);
+    return roundKwh(v);
   });
   if (!kwh.some((v) => v !== null)) throw new Error(`no data inside ${quarter.key}`);
   const isIdx = (i: unknown): i is number => Number.isInteger(i) && (i as number) >= 0 && (i as number) < n;
@@ -170,7 +170,7 @@ export function summarize(p: HourlyPayload, quarter: Quarter): Omit<HourlyResult
     monthly[monthIndexInQuarter(quarter, ts)] += v;
     total += v;
   });
-  const mwh6 = (kwh: number) => Math.round(kwh * 1000) / 1e6; // exact: kWh have 3 decimals
+  const mwh6 = (kwh: number) => Math.round(kwh * 1000) / 1e6; // exact: kWh have at most 1 decimal
   const written = p.kwh.filter((v) => v !== null).length;
   return {
     registryId: p.registryId,

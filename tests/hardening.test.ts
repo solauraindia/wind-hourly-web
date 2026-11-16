@@ -79,7 +79,7 @@ describe("output names and headers", () => {
 describe("payload validation", () => {
   it("normalises a good payload", () => {
     const { payload: p } = validatePayload(payload({ estimated: [2, 1, 1] }));
-    expect(p.kwh[0]).toBe(10.123);
+    expect(p.kwh[0]).toBe(10.1);
     expect(p.estimated).toEqual([1, 2]);
   });
   it.each([

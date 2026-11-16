@@ -112,16 +112,19 @@ describe("scaleMonth", () => {
   });
 
   it("scales down by one factor and lands exactly on the target", () => {
-    const r = scaleMonth([1.1111, 2.2222, null, 3.3333], 5.555, RATING);
-    for (const v of r.values) if (v !== null) expect(Math.round(v * 1000) / 1000).toBe(v);
-    expect(sum(r.values)).toBeCloseTo(5.555, 6);
+    const r = scaleMonth([11.1, 22.2, null, 33.3], 55.5, RATING);
+    for (const v of r.values) if (v !== null) expect(Math.round(v * 10) / 10).toBe(v);
+    expect(sum(r.values)).toBeCloseTo(55.5, 6);
     expect(r.factor).toBeLessThan(1);
   });
 
-  it("rounds to 3 decimals without missing the target", () => {
-    const r = scaleMonth([1.1111, 2.2222, 3.3333], 7.777, RATING);
-    for (const v of r.values) expect(Math.round((v as number) * 1000) / 1000).toBe(v);
-    expect(sum(r.values)).toBeCloseTo(7.777, 6);
+  it("keeps whole kWh whole and 0.1 kWh at 0.1, without missing the target", () => {
+    const whole = scaleMonth([1111, 2222, 3333], 7777, RATING);
+    for (const v of whole.values) expect(Number.isInteger(v)).toBe(true);
+    expect(sum(whole.values)).toBe(7777);
+    const tenth = scaleMonth([111.1, 222.2, 333.3], 777.7, RATING);
+    for (const v of tenth.values) expect(Math.round((v as number) * 10) / 10).toBe(v);
+    expect(sum(tenth.values)).toBeCloseTo(777.7, 6);
   });
 });
 
@@ -160,6 +163,12 @@ describe("reconcileMonth", () => {
     const r = reconcileMonth({ hours: [500, 500], siblings: [], ratingKwh: RATING, targetKwh: 1000, fill: true });
     expect(r.values).toEqual([500, 500]);
     expect(r.factor).toBe(1);
+  });
+
+  it("a whole-kWh month stays whole, filled hours included, and the total lands on the target rounded to a kWh", () => {
+    const r = reconcileMonth({ hours: [503, null, 497, 610], siblings: [[1000, 1013, 1000, 1200]], ratingKwh: RATING, targetKwh: 2215.37, fill: true });
+    for (const v of r.values) expect(Number.isInteger(v)).toBe(true);
+    expect(r.afterKwh).toBe(2215);
   });
 
   it("scales a month above the target down, without filling gaps", () => {

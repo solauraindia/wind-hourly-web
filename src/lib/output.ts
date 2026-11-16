@@ -41,7 +41,7 @@ export async function renderMeterXlsx(p: HourlyPayload, device: Device, quarter:
       isoLocal(ts),
       LOCAL_TZ_NAME,
       isoUtc(ts),
-      // kWh carry 3 decimals, so MWh are exact at 6
+      // kWh carry at most 1 decimal (see roundKwh), so MWh are exact at 6
       unit === "MWh" ? Math.round(kwh * 1000) / 1e6 : kwh,
       unit,
       idCell(device.meterId),

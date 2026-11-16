@@ -9,9 +9,13 @@
  *
  * A month above the target is only scaled down (one factor below 1); gaps stay empty.
  *
+ * Values keep the month's own precision (whole kWh or 0.1 kWh, see roundKwh).
+ *
  * Pure functions on one month's hours (index = hour of the month, so
  * index % 24 is the hour of day). No randomness: same input, same output.
  */
+
+import { decimalsOf, roundTo } from "./compute";
 
 export interface Rule {
   /** each month's target is picked between issued +marginPct and +marginMaxPct */
@@ -55,7 +59,6 @@ export function targetPct(rule: Rule, registryId: string, month: string): number
   return Math.round((rule.marginPct + (rule.marginMaxPct - rule.marginPct) * (h / 2 ** 32)) * 100) / 100;
 }
 
-const round3 = (v: number) => Math.round(v * 1000) / 1000;
 const total = (v: (number | null)[]) => v.reduce<number>((s, x) => s + (x ?? 0), 0);
 
 export function estimateMissing(
@@ -115,30 +118,31 @@ export function estimateMissing(
 }
 
 /** Put the rounding remainder on the adjustable hour with the most room, so totals land exactly. */
-function settle(values: (number | null)[], targetKwh: number, adjustable: number[], ratingKwh: number) {
-  const residual = round3(targetKwh - total(values));
+function settle(values: (number | null)[], targetKwh: number, adjustable: number[], ratingKwh: number, dp: number) {
+  const residual = roundTo(targetKwh - total(values), dp);
   if (!residual || !adjustable.length) return;
   const i = adjustable.reduce((best, j) => ((values[j] as number) < (values[best] as number) ? j : best), adjustable[0]);
-  const v = round3((values[i] as number) + residual);
+  const v = roundTo((values[i] as number) + residual, dp);
   if (v >= 0 && v <= ratingKwh) values[i] = v;
 }
 
 /** Lower a month above the target: one factor below 1 on every producing hour. */
-function scaleDown(values: (number | null)[], targetKwh: number, ratingKwh: number) {
+function scaleDown(values: (number | null)[], targetKwh: number, ratingKwh: number, dp: number) {
   const out = [...values];
   const adjustable = out.flatMap((v, i) => (v != null && v > 0 ? [i] : []));
   const base = adjustable.reduce((s, i) => s + (out[i] as number), 0);
   const need = targetKwh - (total(out) - base);
   const factor = base > 0 ? Math.max(need, 0) / base : 1;
-  for (const i of adjustable) out[i] = round3((out[i] as number) * factor);
-  settle(out, targetKwh, adjustable, ratingKwh);
+  for (const i of adjustable) out[i] = roundTo((out[i] as number) * factor, dp);
+  settle(out, targetKwh, adjustable, ratingKwh, dp);
   const hoursRaised = adjustable.filter((i) => out[i] !== values[i]).length;
   const afterKwh = total(out);
   return { values: out, factor, hoursRaised, hoursAtRating: 0, afterKwh, shortKwh: 0 };
 }
 
-export function scaleMonth(values: (number | null)[], targetKwh: number, ratingKwh: number) {
-  if (total(values) > targetKwh) return scaleDown(values, targetKwh, ratingKwh);
+/** `dp`: decimals to keep, by default the ones the values already use. */
+export function scaleMonth(values: (number | null)[], targetKwh: number, ratingKwh: number, dp = decimalsOf(values)) {
+  if (total(values) > targetKwh) return scaleDown(values, targetKwh, ratingKwh, dp);
   const out = [...values];
   const adjustable = out.flatMap((v, i) => (v != null && v > 0 && v < ratingKwh ? [i] : []));
   const fixed = total(out.map((v, i) => (adjustable.includes(i) ? null : v)));
@@ -160,14 +164,14 @@ export function scaleMonth(values: (number | null)[], targetKwh: number, ratingK
         else hi = mid;
       }
       factor = hi;
-      for (const i of adjustable) out[i] = round3(Math.min((out[i] as number) * factor, ratingKwh));
-      settle(out, targetKwh, adjustable.filter((i) => (out[i] as number) < ratingKwh), ratingKwh);
+      for (const i of adjustable) out[i] = roundTo(Math.min((out[i] as number) * factor, ratingKwh), dp);
+      settle(out, targetKwh, adjustable.filter((i) => (out[i] as number) < ratingKwh), ratingKwh, dp);
     }
   }
   const hoursRaised = adjustable.filter((i) => (out[i] as number) > (values[i] as number)).length;
   const hoursAtRating = adjustable.filter((i) => out[i] === ratingKwh).length;
   const afterKwh = total(out);
-  return { values: out, factor, hoursRaised, hoursAtRating, afterKwh, shortKwh: Math.max(0, round3(targetKwh - afterKwh)) };
+  return { values: out, factor, hoursRaised, hoursAtRating, afterKwh, shortKwh: Math.max(0, roundTo(targetKwh - afterKwh, dp)) };
 }
 
 export interface MonthInput {
@@ -205,9 +209,12 @@ export function reconcileMonth(m: MonthInput): MonthResult {
     values, beforeKwh, afterKwh: total(values), shortKwh: 0, filledIdx: [], hoursCalm: 0, hoursNoEvidence: 0,
     fillKwh: 0, scaleKwh: 0, factor: 1, hoursRaised: 0, hoursAtRating: 0, ...over,
   });
-  if (beforeKwh === m.targetKwh) return result({});
-  if (beforeKwh > m.targetKwh) {
-    const s = scaleMonth(values, m.targetKwh, m.ratingKwh);
+  // keep the month's own precision, totals included
+  const dp = decimalsOf(m.hours);
+  const target = roundTo(m.targetKwh, dp);
+  if (roundTo(beforeKwh, dp) === target) return result({});
+  if (beforeKwh > target) {
+    const s = scaleMonth(values, target, m.ratingKwh, dp);
     return result({ values: s.values, afterKwh: s.afterKwh, scaleKwh: s.afterKwh - beforeKwh, factor: s.factor, hoursRaised: s.hoursRaised });
   }
 
@@ -221,18 +228,18 @@ export function reconcileMonth(m: MonthInput): MonthResult {
     hoursNoEvidence = est.noEvidence;
     filledIdx = [...est.estimates.keys()].sort((a, b) => a - b);
     const sumEst = [...est.estimates.values()].reduce((a, b) => a + b, 0);
-    const need = m.targetKwh - beforeKwh;
+    const need = target - beforeKwh;
     if (sumEst >= need && sumEst > 0) {
       // the gaps hold enough: fill them in proportion and leave readings alone
       const k = need / sumEst;
-      for (const [h, v] of est.estimates) values[h] = round3(v * k);
-      settle(values, m.targetKwh, filledIdx, m.ratingKwh);
+      for (const [h, v] of est.estimates) values[h] = roundTo(v * k, dp);
+      settle(values, target, filledIdx, m.ratingKwh, dp);
       return result({ values, filledIdx, hoursCalm, hoursNoEvidence, fillKwh: total(values) - beforeKwh });
     }
-    for (const [h, v] of est.estimates) values[h] = round3(v);
+    for (const [h, v] of est.estimates) values[h] = roundTo(v, dp);
     fillKwh = total(values) - beforeKwh;
   }
-  const s = scaleMonth(values, m.targetKwh, m.ratingKwh);
+  const s = scaleMonth(values, target, m.ratingKwh, dp);
   return {
     values: s.values, beforeKwh, afterKwh: s.afterKwh, shortKwh: s.shortKwh, filledIdx, hoursCalm, hoursNoEvidence,
     fillKwh, scaleKwh: s.afterKwh - beforeKwh - fillKwh, factor: s.factor,
