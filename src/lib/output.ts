@@ -50,6 +50,8 @@ export async function renderMeterXlsx(p: HourlyPayload, device: Device, quarter:
     ]);
   });
   ws.columns.forEach((c, i) => (c.width = [26, 15, 22, 12, 20, 16, 44, 18][i]));
+  // show the raw precision even when trailing digits are zero: 2.7 → 2.700 (whole kWh), 1.6869 stays 4
+  if (unit === "MWh") ws.getColumn(4).eachCell((cell, row) => row > 1 && (cell.numFmt = "0.000#"));
 
   const at = (i: number) => fmtNaive(quarter.start + i * HOUR);
   const info = wb.addWorksheet("MissingData");

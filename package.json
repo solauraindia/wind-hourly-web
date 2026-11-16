@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "db:migrate": "node --env-file=.env scripts/migrate.mjs"
+    "db:migrate": "node --env-file=.env scripts/migrate.mjs",
+    "db:backfill-precision": "node --env-file=.env --conditions=react-server --import tsx scripts/backfill-precision.ts"
   },
   "dependencies": {
     "@neondatabase/auth": "0.5.0-beta",
@@ -30,6 +31,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",
+    "tsx": "4.20.3",
     "typescript": "^5",
     "vitest": "^5.0.3"
   },

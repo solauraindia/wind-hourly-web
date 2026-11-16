@@ -260,7 +260,7 @@ export async function previewItems(app: Db, irec: Db, quarter: Quarter, items: I
 /* Apply / undo ------------------------------------------------------------------------ */
 
 /** Rewrite hourly_results for a device-quarter from a full payload (totals, coverage, quality); keeps processed_at. */
-function resultsUpdate(p: HourlyPayload, quarter: Quarter) {
+export function resultsUpdate(p: HourlyPayload, quarter: Quarter) {
   const s = summarize(p, quarter);
   const toKwh = (mwh: number) => Math.round(mwh * 1e6) / 1000;
   return {
