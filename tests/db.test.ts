@@ -115,22 +115,32 @@ describe.skipIf(!existsSync(RAW))("end to end", () => {
     const xlsx = await renderMeterXlsx((await loadHourly(app, "1.5MWIND016", q2))!, device, q2, "MWh");
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(xlsx as unknown as ArrayBuffer);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(["MeterData"]); // the validator wants exactly one sheet
     const ws = wb.getWorksheet("MeterData")!;
     let sum = 0;
+    let nulls = 0;
     ws.eachRow((row, n) => {
-      if (n > 1) sum += Number(row.getCell(4).value);
+      if (n === 1) return;
+      const v = row.getCell(4).value;
+      if (v === "null") nulls++;
+      else sum += Number(v);
     });
-    expect(ws.rowCount - 1).toBe(2164);
-    expect(sum).toBeCloseTo(1232.3275, 6);
+    // a row for every hour of the quarter; the 2184 − 2164 hours without a value are written as null
+    expect(ws.rowCount - 1).toBe(2184);
+    expect(ws.rowCount - 1 - nulls).toBe(2164);
+    // 360 zero hours are written at the source's smallest positive value (0.0001 MWh:
+    // this file logs 0.1 kWh), so the file total is 36 kWh above the stored total
+    expect(sum).toBeCloseTo(1232.3635, 6);
     // MWh with 3 decimals (register hours, whole kWh) or 4 (power-estimated hours, 0.1 kWh)
     const places = new Set<number>();
     ws.eachRow((row, n) => {
-      if (n > 1) places.add((String(row.getCell(4).value).split(".")[1] ?? "").length);
+      const v = row.getCell(4).value;
+      if (n > 1 && v !== "null") places.add((String(v).split(".")[1] ?? "").length);
     });
     expect(Math.max(...places)).toBeLessThanOrEqual(4);
     expect(ws.getRow(2).values).toEqual([
-      undefined, "2026-04-01T00:00:00+05:30", "Asia/Kolkata", "2026-03-31T18:30:00Z", ws.getRow(2).getCell(4).value,
-      "MWh", 59244760157, "1.5 MW at Seepalakottai Village, HTSC 0157", "1.5MWIND016",
+      undefined, "2026-04-01T00:00:00+05:30", "Asia/Calcutta", "2026-03-31T18:30:00Z", ws.getRow(2).getCell(4).value,
+      "MWh", 59244760157, "1.5MWIND016", "evident",
     ]);
   });
 });

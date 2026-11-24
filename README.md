@@ -43,9 +43,11 @@ pnpm test                # golden + database tests (PGlite, no network)
    workbook's `Hourly Files_details` sheet.
 2. **Hourly mapping.** Pick the quarter and drop in the raw files. The app works
    out each file's layout, matches each turbine to a device, and saves the
-   hourly values when you click Generate. Downloads have a `MeterData` sheet
-   (the template) and a `MissingData` sheet listing every missing or estimated
-   hour with its reason.
+   hourly values when you click Generate. Each download is the `MeterData`
+   template: one row per quarter hour, `null` where nothing was recorded, and
+   zero/negative readings written as the smallest positive value the source's
+   precision allows. A separate `Missing` download lists every null hour with
+   its reason, the estimated and reconciled hours, and the substituted readings.
 3. **Quarter summary.** irec actuals, eligible and issued figures against the
    hourly statement, with diff and min. Exports to `.xlsx` with live formulas.
 
@@ -72,6 +74,7 @@ rule in `detect.ts`.
 | `NEON_AUTH_BASE_URL` | Neon Auth URL of the app project |
 | `NEON_AUTH_COOKIE_SECRET` | session cookie signing secret, `openssl rand -base64 32` |
 | `ALLOWED_EMAILS` | required comma-separated allow-list (empty = nobody can sign in) |
+| `SIMULATE_PLACEHOLDERS` | optional: internal demos only, varies zero/negative placeholders 1–9 at the source's precision; off unless `true` |
 
 ## Access
 

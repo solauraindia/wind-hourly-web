@@ -1,12 +1,12 @@
 import { requireApiUser } from "@/lib/auth/server";
 import { IrecUnavailableError, irecUnavailableResponse } from "@/lib/irec";
 import { appDb, irecDb } from "@/lib/db";
-import { outputFileName, renderMeterXlsx } from "@/lib/output";
+import { missingFileName, outputFileName, renderMeterXlsx, renderMissingXlsx, simulatePlaceholders } from "@/lib/output";
 import { parseQuarter } from "@/lib/quarter";
 import { loadDevices, loadHourly } from "@/lib/store";
 import { contentDisposition } from "@/lib/validate";
 
-/** Render one hourly file on demand from the stored values. ?unit=MWh|kWh */
+/** Render one hourly file on demand from the stored values. ?unit=MWh|kWh, or ?report=missing for its quality report */
 async function handle(req: Request, ctx: RouteContext<"/api/files/[quarter]/[device]">) {
   const user = await requireApiUser();
   if (user instanceof Response) return user;
@@ -18,8 +18,11 @@ async function handle(req: Request, ctx: RouteContext<"/api/files/[quarter]/[dev
   const device = (await loadDevices(appDb(), irecDb())).find((d) => d.registryId === registryId);
   const payload = device && (await loadHourly(appDb(), registryId, quarter));
   if (!device || !payload) return new Response("Not found", { status: 404 });
-  const name = outputFileName(device, quarter);
-  return new Response(new Uint8Array(await renderMeterXlsx(payload, device, quarter, unit)), {
+  const missing = new URL(req.url).searchParams.get("report") === "missing";
+  const name = missing ? missingFileName(device, quarter) : outputFileName(device, quarter);
+  const opts = { simulate: simulatePlaceholders() };
+  const xlsx = missing ? await renderMissingXlsx(payload, device, quarter, opts) : await renderMeterXlsx(payload, device, quarter, unit, opts);
+  return new Response(new Uint8Array(xlsx), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": contentDisposition(name),

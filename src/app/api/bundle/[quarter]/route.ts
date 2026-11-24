@@ -3,7 +3,7 @@ import { requireApiUser } from "@/lib/auth/server";
 import { IrecUnavailableError, irecUnavailableResponse } from "@/lib/irec";
 import { contentDisposition } from "@/lib/validate";
 import { appDb, irecDb } from "@/lib/db";
-import { outputFileName, renderMeterXlsx } from "@/lib/output";
+import { outputFileName, renderMeterXlsx, simulatePlaceholders } from "@/lib/output";
 import { parseQuarter } from "@/lib/quarter";
 import { loadDevices, loadHourly, loadResults } from "@/lib/store";
 
@@ -19,9 +19,10 @@ async function handle(req: Request, ctx: RouteContext<"/api/bundle/[quarter]">) 
   const db = appDb();
   const [devices, results] = await Promise.all([loadDevices(db, irecDb()), loadResults(db, quarter.key)]);
   const entries: Record<string, Uint8Array> = {};
+  const opts = { simulate: simulatePlaceholders() };
   for (const d of devices.filter((d) => results[d.registryId])) {
     const payload = await loadHourly(db, d.registryId, quarter);
-    if (payload) entries[outputFileName(d, quarter)] = await renderMeterXlsx(payload, d, quarter, unit);
+    if (payload) entries[outputFileName(d, quarter)] = await renderMeterXlsx(payload, d, quarter, unit, opts);
   }
   if (!Object.keys(entries).length) return new Response("Nothing processed for this quarter", { status: 404 });
   return new Response(new Uint8Array(zipSync(entries, { level: 6 })), {
