@@ -74,7 +74,7 @@ rule in `detect.ts`.
 | `NEON_AUTH_BASE_URL` | Neon Auth URL of the app project |
 | `NEON_AUTH_COOKIE_SECRET` | session cookie signing secret, `openssl rand -base64 32` |
 | `ALLOWED_EMAILS` | required comma-separated allow-list (empty = nobody can sign in) |
-| `SIMULATE_PLACEHOLDERS` | optional: internal demos only, varies zero/negative placeholders 1–9 at the source's precision; off unless `true` |
+| `SIMULATE_PLACEHOLDERS` | simulation output, on unless set to `false`: fills hours with no reading and varies zero/negative placeholders 1–9 at the source's precision |
 
 ## Access
 

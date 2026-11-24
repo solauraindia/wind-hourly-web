@@ -53,8 +53,8 @@ export function simulatedDigit(seed: string): number {
   return 1 + ((h >>> 0) % 9);
 }
 
-/** The explicit simulation switch; off unless the environment asks for it. */
-export const simulatePlaceholders = () => /^(1|true)$/i.test(process.env.SIMULATE_PLACEHOLDERS ?? "");
+/** Simulation is the default; set `SIMULATE_PLACEHOLDERS=false` (or `0`) to turn it off. */
+export const simulatePlaceholders = () => !/^(0|false)$/i.test((process.env.SIMULATE_PLACEHOLDERS ?? "").trim());
 
 /**
  * Render the template workbook for one device and quarter, in the Meter Data for

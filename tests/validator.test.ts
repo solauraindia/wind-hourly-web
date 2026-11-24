@@ -1,8 +1,8 @@
 import ExcelJS from "exceljs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { quarterHours, type HourlyPayload } from "@/lib/compute";
 import { VALIDATOR_URL, validateFiles } from "@/lib/meterValidator";
-import { renderMeterXlsx, renderMissingXlsx } from "@/lib/output";
+import { renderMeterXlsx, renderMissingXlsx, simulatePlaceholders } from "@/lib/output";
 import { parseQuarter } from "@/lib/quarter";
 import type { Device } from "@/lib/types";
 
@@ -88,6 +88,27 @@ describe("meter file for the Bridge T-EAC validator", () => {
     expect(text).toContain("  of which zero or negative: 2, written as 0.1 kWh (the smallest positive at this source's precision)");
     expect(text).toContain("2026-07-01 07:00:00 | -2.7");
     expect(text).toContain("2026-07-01 08:00:00 | 0");
+  });
+});
+
+describe("simulation flag", () => {
+  const prev = process.env.SIMULATE_PLACEHOLDERS;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.SIMULATE_PLACEHOLDERS;
+    else process.env.SIMULATE_PLACEHOLDERS = prev;
+  });
+
+  it("is on unless explicitly turned off", () => {
+    delete process.env.SIMULATE_PLACEHOLDERS;
+    expect(simulatePlaceholders()).toBe(true);
+    process.env.SIMULATE_PLACEHOLDERS = "";
+    expect(simulatePlaceholders()).toBe(true);
+    process.env.SIMULATE_PLACEHOLDERS = "false";
+    expect(simulatePlaceholders()).toBe(false);
+    process.env.SIMULATE_PLACEHOLDERS = "0";
+    expect(simulatePlaceholders()).toBe(false);
+    process.env.SIMULATE_PLACEHOLDERS = "true";
+    expect(simulatePlaceholders()).toBe(true);
   });
 });
 
