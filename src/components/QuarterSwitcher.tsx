@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { Spinner } from "./Pending";
 import { recentQuarters } from "@/lib/quarter";
@@ -9,6 +9,7 @@ import { quarterLabel } from "@/lib/format";
 export function QuarterSwitcher({ value }: { value: string }) {
   const router = useRouter();
   const path = usePathname();
+  const params = useSearchParams();
   const [pending, startTransition] = useTransition();
   const options = recentQuarters(8);
   if (!options.includes(value as never)) options.unshift(value as never);
@@ -20,8 +21,9 @@ export function QuarterSwitcher({ value }: { value: string }) {
         value={value}
         disabled={pending}
         onChange={(e) => {
-          const q = e.target.value;
-          startTransition(() => router.push(`${path}?q=${q}`));
+          const next = new URLSearchParams(params);
+          next.set("q", e.target.value);
+          startTransition(() => router.push(`${path}?${next}`));
         }}
       >
         {options.map((q) => (

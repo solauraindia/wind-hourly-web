@@ -2,6 +2,7 @@ import "server-only";
 import type { DeviceActuals } from "./actuals";
 import type { Db } from "./db";
 import type { Quarter } from "./quarter";
+import { parseEnergyType, type EnergyType } from "./types";
 
 /** irec could not be queried (paused project, network, credentials). Routes answer 503. */
 export class IrecUnavailableError extends Error {}
@@ -35,6 +36,7 @@ export interface IrecDevice {
   client: string; // companies.company_name
   capacityMw: number | null;
   status: string | null;
+  energyType: EnergyType | null; // project_types.project_type_name
 }
 
 export async function irecDevices(db: Db, registryIds: string[]): Promise<Map<string, IrecDevice>> {
@@ -45,12 +47,14 @@ export async function irecDevices(db: Db, registryIds: string[]): Promise<Map<st
     client: string | null;
     capacity: number | null;
     status: string | null;
+    project_type: string | null;
   }>(
     db,
     `SELECT d.device_meta_id AS registry_id, d.htsc_no AS meter_id, d.project_description AS facility_id,
-            c.company_name AS client, d.project_capacity AS capacity, d.status
+            c.company_name AS client, d.project_capacity AS capacity, d.status, t.project_type_name AS project_type
        FROM (${DEVICE_PER_REGISTRY_ID}) d
-       LEFT JOIN companies c ON c.company_id = d.company_id`,
+       LEFT JOIN companies c ON c.company_id = d.company_id
+       LEFT JOIN project_types t ON t.project_type_id = d.project_type_id`,
     [registryIds],
   );
   return new Map(
@@ -63,6 +67,7 @@ export async function irecDevices(db: Db, registryIds: string[]): Promise<Map<st
         client: r.client?.trim() ?? "",
         capacityMw: r.capacity,
         status: r.status,
+        energyType: parseEnergyType(r.project_type?.trim().toLowerCase()),
       },
     ]),
   );

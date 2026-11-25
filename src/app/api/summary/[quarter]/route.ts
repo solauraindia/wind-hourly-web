@@ -5,13 +5,15 @@ import { IrecUnavailableError, irecActuals, irecUnavailableResponse } from "@/li
 import { parseQuarter } from "@/lib/quarter";
 import { loadDevices, loadResults } from "@/lib/store";
 import { buildSummary, summaryWorkbook } from "@/lib/summary";
+import { parseEnergyType } from "@/lib/types";
 
-async function handle(_req: Request, ctx: RouteContext<"/api/summary/[quarter]">) {
+async function handle(req: Request, ctx: RouteContext<"/api/summary/[quarter]">) {
   const user = await requireApiUser();
   if (user instanceof Response) return user;
   const quarter = parseQuarter((await ctx.params).quarter);
   if (!quarter) return new Response("Invalid quarter", { status: 400 });
-  const devices = await loadDevices(appDb(), irecDb());
+  const type = parseEnergyType(new URL(req.url).searchParams.get("type"));
+  const devices = (await loadDevices(appDb(), irecDb())).filter((d) => !type || d.energyType === type);
   const [results, actuals] = await Promise.all([
     loadResults(appDb(), quarter.key),
     irecActuals(irecDb(), quarter, devices.map((d) => d.registryId)),
@@ -20,14 +22,14 @@ async function handle(_req: Request, ctx: RouteContext<"/api/summary/[quarter]">
   return new Response(new Uint8Array(xlsx), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": contentDisposition(`${quarter.key}_summary.xlsx`),
+      "Content-Disposition": contentDisposition(`${quarter.key}_${type ? `${type}_` : ""}summary.xlsx`),
     },
   });
 }
 
-export async function GET(_req: Request, ctx: RouteContext<"/api/summary/[quarter]">) {
+export async function GET(req: Request, ctx: RouteContext<"/api/summary/[quarter]">) {
   try {
-    return await handle(_req, ctx);
+    return await handle(req, ctx);
   } catch (e) {
     if (e instanceof IrecUnavailableError) return irecUnavailableResponse(e);
     throw e;

@@ -9,7 +9,7 @@ import type { Device } from "@/lib/types";
 const q3 = parseQuarter("2026-Q3")!;
 const device: Device = {
   id: "2.7MES20003", registryId: "2.7MES20003", alias: "T1", outputName: "Uthiyur-T1", client: "C",
-  meterId: "", facilityId: "2.7 MW Uthiyur Village, HTSC No.2297", inIrec: true,
+  meterId: "", facilityId: "2.7 MW Uthiyur Village, HTSC No.2297", inIrec: true, energyType: "wind",
 };
 
 function payload(): HourlyPayload {

@@ -166,7 +166,7 @@ describe("irec", () => {
 });
 
 describe("summary math", () => {
-  const dev = (id: string): Device => ({ id, registryId: id, alias: id, outputName: id, client: "C", meterId: "1", facilityId: "F", inIrec: true });
+  const dev = (id: string): Device => ({ id, registryId: id, alias: id, outputName: id, client: "C", meterId: "1", facilityId: "F", inIrec: true, energyType: "wind" });
   const res = (id: string, m: [number, number, number]) => ({ registryId: id, monthlyMWh: m, totalMWh: m[0] + m[1] + m[2] }) as HourlyResult;
   it("diff = actual − hourly, min = min(eligible, hourly), eligible falls back to actual", () => {
     const actuals: Record<string, DeviceActuals> = {

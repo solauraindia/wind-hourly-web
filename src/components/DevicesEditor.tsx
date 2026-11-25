@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { Device } from "@/lib/types";
+import { ENERGY_LABELS, type Device, type EnergyType } from "@/lib/types";
+import { EnergyBadge } from "./EnergyType";
 import { IconAlert, IconCheck, IconX } from "./Icons";
 
 type Row = Device & { isNew?: boolean };
@@ -15,9 +16,13 @@ const EDITABLE: { key: "registryId" | "alias" | "sourceHint" | "outputName" | "s
   { key: "site", label: "Site", width: "w-[120px]", hint: "Physical site; turbines or plants at the same site are used as evidence when reconciling logger gaps" },
 ];
 
-const blank = (): Row => ({ id: "", registryId: "", alias: "", outputName: "", client: "", meterId: "", facilityId: "", inIrec: false, isNew: true });
+const blank = (): Row => ({ id: "", registryId: "", alias: "", outputName: "", client: "", meterId: "", facilityId: "", inIrec: false, energyType: null, isNew: true });
 
-export function DevicesEditor({ initial, version: initialVersion, irecUnavailable }: { initial: Device[]; version: string; irecUnavailable: boolean }) {
+/**
+ * `type` only hides rows: every device stays in state and is sent on save, so
+ * a filtered view never deletes the devices it is not showing.
+ */
+export function DevicesEditor({ initial, version: initialVersion, irecUnavailable, type = null }: { initial: Device[]; version: string; irecUnavailable: boolean; type?: EnergyType | null }) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(initial);
   // the table fingerprint the next save is checked against; refreshed by every successful save
@@ -33,6 +38,9 @@ export function DevicesEditor({ initial, version: initialVersion, irecUnavailabl
     setRows(initial);
     setVersion(initialVersion);
   }
+
+  const shown = (d: Row) => !type || d.isNew || d.energyType === type;
+  const visible = rows.filter(shown).length;
 
   const set = (i: number, key: keyof Row, value: string) => setRows((r) => r.map((d, j) => (j === i ? { ...d, [key]: value } : d)));
 
@@ -73,7 +81,9 @@ export function DevicesEditor({ initial, version: initialVersion, irecUnavailabl
     <section className="card overflow-hidden">
       <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
         <div>
-          <h2 className="text-[15px] font-semibold">Devices · {rows.length}</h2>
+          <h2 className="text-[15px] font-semibold">
+            {type ? `${ENERGY_LABELS[type]} devices · ${visible} of ${rows.length}` : `Devices · ${rows.length}`}
+          </h2>
           <p className="text-[12.5px] text-muted">Order here is the order of the quarter summary. Removing a device also deletes its stored hourly data.</p>
         </div>
         <div className="ml-auto flex gap-2">
@@ -108,12 +118,14 @@ export function DevicesEditor({ initial, version: initialVersion, irecUnavailabl
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
+            {visible === 0 && (
               <tr>
-                <td className="td py-10 text-center text-muted" colSpan={10}>No devices yet — import a delivery workbook above or add one.</td>
+                <td className="td py-10 text-center text-muted" colSpan={10}>
+                  {rows.length === 0 ? "No devices yet — import a delivery workbook above or add one." : irecUnavailable ? "irec is unavailable, so device types are unknown." : `No ${type ? ENERGY_LABELS[type].toLowerCase() : ""} devices.`}
+                </td>
               </tr>
             )}
-            {rows.map((d, i) => (
+            {rows.map((d, i) => !shown(d) ? null : (
               <tr key={d.id || `new-${i}`} className="hover:bg-surface-2/60">
                 <td className="td num pl-5 text-muted">{i + 1}</td>
                 {EDITABLE.map((c) => (
@@ -121,8 +133,9 @@ export function DevicesEditor({ initial, version: initialVersion, irecUnavailabl
                     {editing && (c.key !== "registryId" || d.isNew) ? (
                       <input className="input h-8 text-[13px]" value={d[c.key] ?? ""} onChange={(e) => set(i, c.key, e.target.value)} />
                     ) : (
-                      <span className={`block truncate text-[13px] ${c.key === "outputName" ? "font-medium" : ""} ${!d[c.key] ? "text-faint" : ""}`}>
-                        {d[c.key] || "—"}
+                      <span className={`flex items-center gap-1.5 truncate text-[13px] ${c.key === "outputName" ? "font-medium" : ""} ${!d[c.key] ? "text-faint" : ""}`}>
+                        <span className="truncate">{d[c.key] || "—"}</span>
+                        {c.key === "registryId" && <EnergyBadge type={d.energyType} />}
                       </span>
                     )}
                   </td>

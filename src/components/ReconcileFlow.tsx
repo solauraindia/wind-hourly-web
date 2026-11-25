@@ -1,5 +1,6 @@
 "use client";
 
+import { EnergyBadge } from "./EnergyType";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_RULE, RULE_LIMIT_PCT, type Rule } from "@/lib/reconcile";
@@ -188,7 +189,7 @@ export function ReconcileFlow({ quarter, monthLabels, rows }: { quarter: string;
                 <tr key={r.registryId}>
                   <td className="td cursor-pointer pl-5" title={`Select or clear every month with issuance for ${r.outputName}`} onClick={() => toggle(r.cells.map((c) => key(r.registryId, c.mi)))}>
                     <div className="font-medium">{r.outputName}</div>
-                    <div className="num text-[12px] text-muted">{r.registryId} · {r.ratingMw ?? "?"} MW{r.site ? ` · ${r.site}` : ""}</div>
+                    <div className="num text-[12px] text-muted">{r.registryId} · {r.ratingMw ?? "?"} MW{r.site ? ` · ${r.site}` : ""} <EnergyBadge type={r.energyType} /></div>
                   </td>
                   {r.cells.map((c) => (
                     <td key={c.mi} className="td px-1.5 py-1.5">

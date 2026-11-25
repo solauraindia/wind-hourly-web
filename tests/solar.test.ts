@@ -55,6 +55,22 @@ describe("solar-hour-grid", () => {
     expect(h.size).toBe(23);
   });
 
+  it("drops readings above the rating: one hour alone, or the whole day when several", () => {
+    const rows: Row[] = [
+      ["Date", time(6), time(7), time(8), time(9), time(10), time(11)],
+      [day(1), 100, 200, 32279, 400, 500, 600],
+      [day(2), 100, 7800, 9000, 400, 500, 600],
+      [day(3), 100, 200, 300, 400, 500, 600],
+    ];
+    const [s] = parseSolarHourGrid({ name: "6MW-JUNE", rows }, "ALC.xlsx");
+    const b = buildHourly(s);
+    expect(b.dropped.get(at(1, 8))).toBe("32,279 kWh is above the 6MW rating");
+    expect(b.hours.get(at(1, 9))).toBe(400);
+    expect(b.hours.has(at(2, 6))).toBe(false);
+    expect(b.dropped.get(at(2, 12))).toMatch(/not this plant's data/);
+    expect(b.hours.get(at(3, 8))).toBe(300);
+  });
+
   it("days across the top", () => {
     const rows: Row[] = [[null, day(1), day(2), day(3), day(4), day(5)], ...[6, 7, 8].map((h) => [time(h), h, h, h, h, h] as Row)];
     const [s] = parseSolarHourGrid({ name: "10MW-JUNE", rows }, "ALC.xlsx");
@@ -112,6 +128,61 @@ describe("hour-ending readings roll forward", () => {
     expect(hours(sstpl).get(at(1, 9))).toBe(390);
     expect(hours(ssml).get(at(2, 9))! + hours(ssml).get(at(2, 10))!).toBeCloseTo(2500);
     expect(hours(ssml).get(at(2, 9))).toBeCloseTo(1000); // typical 1000 : 1500
+  });
+});
+
+describe("hand readings are re-placed until they fit", () => {
+  // SSML-like block: 3 MW + 2 MW inverters; GEN values per hour-ending label, one plant column for brevity
+  const block = (d: number, rows: [number, number | null][]): Row[] => [
+    ["DATE: ", day(d), "TIME", "HOURLY GII", "SSML"],
+    [null, null, null, null, "3MW HOURLY INV GEN"],
+    ...rows.map(([h, v]) => [null, null, time(h), 0.5, v] as Row),
+  ];
+  const normal: [number, number][] = [[8, 500], [9, 1200], [10, 2000], [11, 2500], [12, 2800], [13, 2800], [14, 2500], [15, 2000], [16, 1200], [17, 500]];
+  const parse = (...days: [number, number | null][][]) => {
+    const rows = [...Array.from({ length: 10 }, (_, k) => block(k + 1, normal)).flat(), ...days.flatMap((r, k) => block(20 + k, r))];
+    return buildHourly(parseSolarDayBlocks({ name: "S", rows }, "Sambandam.xlsx")[0]);
+  };
+  const dayTotal = (b: ReturnType<typeof buildHourly>, d: number) => [...b.hours].filter(([t]) => t >= at(d, 0) && t < at(d + 1, 0)).reduce((a, [, v]) => a + v, 0);
+  const swap = (pairs: [number, number][]) => normal.map(([h, v]) => [h, pairs.find(([x]) => x === h)?.[1] ?? v] as [number, number]);
+
+  it("a skipped reading (0) and the next one share their energy", () => {
+    const b = parse(swap([[12, 0], [13, 5600]]));
+    expect(b.hours.get(at(20, 11))! + b.hours.get(at(20, 12))!).toBeCloseTo(5600);
+    // shared by the usual shape (which the skipped 0 nudges down a little for that hour)
+    expect(b.hours.get(at(20, 11))).toBeGreaterThan(2500);
+    expect(b.hours.get(at(20, 12))).toBeGreaterThan(2500);
+    expect(b.estimated.has(at(20, 11)) && b.estimated.has(at(20, 12))).toBe(true);
+    expect(b.hours.get(at(20, 10))).toBe(2500); // untouched
+  });
+
+  it("a negative reading grows forward to the one that corrects it", () => {
+    // 11:00 −3000, 12:00 0, 13:00 0, 14:00 13100: 10,100 over four hours
+    const b = parse(swap([[11, -3000], [12, 0], [13, 0], [14, 13100]]));
+    const w = [10, 11, 12, 13].map((h) => b.hours.get(at(20, h))!);
+    expect(w.every((v) => v > 0 && v <= 3000)).toBe(true);
+    expect(w.reduce((a, v) => a + v, 0)).toBeCloseTo(10100);
+    expect(dayTotal(b, 20)).toBeCloseTo(normal.reduce((a, [, v]) => a + v, 0) - 500);
+  });
+
+  it("a late reading takes in the short hours after it, as many as it needs", () => {
+    // 12:00 read late, 13:00 skipped, 14:00 short: 8,300 kWh belongs to three hours
+    const b = parse(swap([[12, 7600], [13, 0], [14, 700]]));
+    const est = [...b.estimated].filter((t) => t >= at(20, 0) && t < at(21, 0)).map((t) => new Date(t).getUTCHours());
+    expect(est).toEqual([11, 12, 13]);
+    expect([11, 12, 13].every((h) => b.hours.get(at(20, h))! <= 3000)).toBe(true);
+    expect([11, 12, 13].reduce((a, h) => a + b.hours.get(at(20, h))!, 0)).toBeCloseTo(8300);
+    expect(b.hours.get(at(20, 10))).toBe(2500);
+  });
+
+  it("a plain late reading only needs the hour it left short", () => {
+    const b = parse(swap([[12, 4600], [13, 1000]]));
+    expect([...b.estimated].filter((t) => t >= at(20, 0) && t < at(21, 0)).map((t) => new Date(t).getUTCHours())).toEqual([11, 12]);
+  });
+
+  it("gives up (missing) when even six hours cannot hold it", () => {
+    const b = parse(swap([[12, 40000]])); // more than six hours at full power
+    expect([...b.dropped.values()].filter((r) => r.startsWith("hand readings could not be placed")).length).toBe(6);
   });
 });
 

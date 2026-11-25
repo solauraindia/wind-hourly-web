@@ -16,7 +16,9 @@ const NAV = [
 
 export function Sidebar({ email }: { email: string }) {
   const path = usePathname();
-  const q = useSearchParams().get("q");
+  const params = useSearchParams();
+  // keep the quarter and the wind/solar filter when moving between pages
+  const kept = new URLSearchParams([...params].filter(([k]) => k === "q" || k === "type")).toString();
   return (
     <aside className="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-line bg-surface">
       <div className="flex items-center gap-2.5 px-5 pb-6 pt-5">
@@ -35,7 +37,7 @@ export function Sidebar({ email }: { email: string }) {
           return (
             <Link
               key={href}
-              href={q ? `${href}?q=${q}` : href}
+              href={kept ? `${href}?${kept}` : href}
               className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
                 active ? "bg-accent-soft font-medium text-accent" : "text-muted hover:bg-surface-2 hover:text-ink"
               }`}

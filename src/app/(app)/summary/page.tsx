@@ -1,4 +1,5 @@
 import { DownloadButton } from "@/components/DownloadButton";
+import { EnergyBadge } from "@/components/EnergyType";
 import { IconDatabase } from "@/components/Icons";
 import { PageHeader } from "@/components/PageHeader";
 import { Stat } from "@/components/Stat";
@@ -6,7 +7,8 @@ import type { DeviceActuals } from "@/lib/actuals";
 import { appDb, irecDb } from "@/lib/db";
 import { irecActuals } from "@/lib/irec";
 import { mwh, quarterLabel } from "@/lib/format";
-import { quarterFromSearch } from "@/lib/pageQuarter";
+import { energyTypeFromSearch, quarterFromSearch } from "@/lib/pageQuarter";
+import { ENERGY_LABELS } from "@/lib/types";
 import { activeReconciliations } from "@/lib/reconcileStore";
 import { loadDevicesSafe, loadResults } from "@/lib/store";
 import { buildSummary, summaryTotals } from "@/lib/summary";
@@ -21,10 +23,11 @@ function diffCell(diff: number | null, actual: number | null) {
 }
 
 export default async function SummaryPage({ searchParams }: PageProps<"/summary">) {
-  const quarter = await quarterFromSearch(searchParams);
-  const [{ devices, irecError }, results, recs] = await Promise.all([
+  const [quarter, type] = await Promise.all([quarterFromSearch(searchParams), energyTypeFromSearch(searchParams)]);
+  const [{ devices: all, irecError }, results, recs] = await Promise.all([
     loadDevicesSafe(appDb(), irecDb()), loadResults(appDb(), quarter.key), activeReconciliations(appDb(), quarter.key),
   ]);
+  const devices = type ? all.filter((d) => d.energyType === type) : all;
   const monthKeys = quarter.months.map(([y, m]) => `${y}-${String(m).padStart(2, "0")}`);
   let actuals: Record<string, DeviceActuals> = {};
   let actualsError: string | null = irecError;
@@ -44,8 +47,9 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
         title="Quarter summary"
         subtitle="Actual generation and eligible credits against the hourly statement, per device."
         quarter={quarter.key}
+        type={type}
         actions={
-          <DownloadButton href={`/api/summary/${quarter.key}`}>Export .xlsx</DownloadButton>
+          <DownloadButton href={`/api/summary/${quarter.key}${type ? `?type=${type}` : ""}`}>Export .xlsx</DownloadButton>
         }
       />
       <div className="mx-auto max-w-[1400px] space-y-6 px-6 py-6">
@@ -96,6 +100,13 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
                 </tr>
               </thead>
               <tbody className="num">
+                {rows.length === 0 && (
+                  <tr>
+                    <td className="td py-10 text-center text-muted" colSpan={16}>
+                      {type && irecError ? "irec is unavailable, so device types are unknown." : `No ${type ? `${ENERGY_LABELS[type].toLowerCase()} ` : ""}devices.`}
+                    </td>
+                  </tr>
+                )}
                 {rows.map((r) => {
                   const total = diffCell(r.diff, r.actualTotal);
                   return (
@@ -104,6 +115,7 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
                         <div className="flex items-baseline gap-2">
                           <span className="text-[12px] text-faint">{r.sl}</span>
                           <span className="whitespace-nowrap font-medium">{r.registryId}</span>
+                          <EnergyBadge type={r.energyType} />
                         </div>
                         <div className="truncate text-[12px] text-muted">{r.client || "—"}</div>
                       </td>

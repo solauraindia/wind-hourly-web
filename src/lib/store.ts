@@ -21,7 +21,7 @@ export async function loadMappings(db: Db): Promise<DeviceMapping[]> {
 function join(mappings: DeviceMapping[], master: Map<string, IrecDevice>): Device[] {
   return mappings.map((m) => {
     const d = master.get(m.registryId);
-    return { ...m, id: m.registryId, client: d?.client ?? "", meterId: d?.meterId ?? "", facilityId: d?.facilityId ?? "", inIrec: !!d };
+    return { ...m, id: m.registryId, client: d?.client ?? "", meterId: d?.meterId ?? "", facilityId: d?.facilityId ?? "", inIrec: !!d, energyType: d?.energyType ?? null };
   });
 }
 

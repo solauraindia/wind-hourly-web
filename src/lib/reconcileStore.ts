@@ -6,7 +6,7 @@ import type { Quarter } from "./quarter";
 import { reconcileMonth, targetPct, type MonthResult, type Rule } from "./reconcile";
 import { loadHourly, loadMappings, loadResults, summarize } from "./store";
 import { HOUR, LOCAL_OFFSET_MIN, MINUTE, naive } from "./time";
-import type { DeviceMapping, HourlyResult } from "./types";
+import type { DeviceMapping, HourlyResult, EnergyType } from "./types";
 
 /* Month helpers ------------------------------------------------------------------ */
 
@@ -88,6 +88,7 @@ export interface GridRow {
   outputName: string;
   site: string | null;
   ratingMw: number | null;
+  energyType: EnergyType | null;
   cells: GridCell[];
 }
 
@@ -114,7 +115,7 @@ export async function loadGrid(app: Db, irec: Db, quarter: Quarter): Promise<Gri
       const status: CellStatus = !r ? "noData" : rec ? "reconciled" : issuedMWh === null ? "none" : statementMWh! < issuedMWh ? "short" : "covered";
       return { mi, month, status, statementMWh, issuedMWh, actualMWh, banked, reconciliation: rec };
     });
-    return { registryId: m.registryId, outputName: m.outputName, site: m.site ?? null, ratingMw: master.get(m.registryId)?.capacityMw ?? null, cells };
+    return { registryId: m.registryId, outputName: m.outputName, site: m.site ?? null, ratingMw: master.get(m.registryId)?.capacityMw ?? null, energyType: master.get(m.registryId)?.energyType ?? null, cells };
   });
 }
 

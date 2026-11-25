@@ -75,6 +75,14 @@ export interface SeriesInfo {
   suggestedDeviceId: string | null;
 }
 
+/** irec project_types: what the device generates from. */
+export type EnergyType = "wind" | "solar";
+
+export const ENERGY_LABELS: Record<EnergyType, string> = { wind: "Wind", solar: "Solar" };
+
+/** `?type=wind|solar` → that type; anything else → null (all devices). */
+export const parseEnergyType = (v: unknown): EnergyType | null => (v === "wind" || v === "solar" ? v : null);
+
 /** App-side mapping for one irec device (table device_mappings). */
 export interface DeviceMapping {
   /** irec devices.device_meta_id — also the eac_registry_id written to the files */
@@ -98,6 +106,8 @@ export interface Device extends DeviceMapping {
   facilityId: string;
   /** false when the registry id no longer exists in irec */
   inIrec: boolean;
+  /** irec project type; null when irec is unavailable or has none */
+  energyType: EnergyType | null;
 }
 
 export interface HourlyResult {

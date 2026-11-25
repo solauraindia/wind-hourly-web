@@ -139,6 +139,36 @@ class Hours {
   }
 }
 
+/**
+ * Readings a plant cannot produce (above RATING_HEADROOM × its rating): one in a
+ * day is a typo and only that hour goes missing; two or more mean the day holds
+ * another plant's data (ALC's 6 MW June sheet repeats the 10 MW plant's first
+ * days), so the whole day goes missing.
+ */
+function dropAboveRating(out: Hours, alias: string) {
+  if (!capacityLabel(alias)) return;
+  const max = maxKwhFor(alias);
+  const byDay = new Map<number, number[]>();
+  for (const [ts, v] of out.hours) if (v > max) byDay.set(dayOf(ts), [...(byDay.get(dayOf(ts)) ?? []), ts]);
+  for (const [day, over] of byDay) {
+    const fmt = (v: number) => Math.round(v).toLocaleString("en-US");
+    if (over.length === 1) {
+      const v = out.hours.get(over[0])!;
+      out.hours.delete(over[0]);
+      out.estimated.delete(over[0]);
+      out.missing(over[0], `${fmt(v)} kWh is above the ${alias} rating`);
+      continue;
+    }
+    for (let h = 0; h < 24; h++) {
+      const ts = day + h * HOUR;
+      out.hours.delete(ts);
+      out.blank.delete(ts);
+      out.estimated.delete(ts);
+      out.missing(ts, `day has ${over.length} hours above the ${alias} rating — not this plant's data`);
+    }
+  }
+}
+
 /* Hour-ending readings with roll-forward ---------------------------------------- */
 
 /** One reading: `kwh` produced over the hours starting at each of `hours`. */
@@ -189,6 +219,109 @@ function spreadSpans(spans: Span[], out: Hours) {
     const w = s.hours.map(typical);
     const total = w.reduce((a, b) => a + b, 0);
     s.hours.forEach((ts, i) => out.set(ts, (s.kwh * (total > 0 ? w[i] / total : 1 / s.hours.length)), true));
+  }
+}
+
+/** A hand-read hour may exceed the rating by this much (a reading a few minutes late) before it is re-placed; re-placed hours stay within the rating itself. */
+const HAND_READING_HEADROOM = 1.1;
+/** Widest window one bad reading is spread over before its hours are given up as missing. */
+const MAX_WINDOW = 6;
+
+/**
+ * Hand-taken readings (Sambandam, Acsen) are differences of a cumulative meter
+ * read about once an hour. Day totals are right, but a reading can land in the
+ * wrong hour:
+ *
+ * - skipped, written as 0: the next reading holds both hours (26 May: 0, 5066);
+ * - wrong, then corrected: a negative followed by an oversized reading
+ *   (5 Jun: −4675, 0, 0, 14751 is 10,076 over four hours);
+ * - late or early: one hour above what the plant can make, a neighbour short
+ *   (8 Apr: 2522, 4542 on a 3 MW inverter).
+ *
+ * Each negative or impossible hour is widened into a window of neighbouring
+ * hours until its energy fits: a negative grows forward to the reading that
+ * corrects it; an oversized hour takes in whichever neighbour is shortest
+ * against its usual output at that time of day (a skipped 0 first, then the
+ * hour a late reading left short), one hour at a time, as many as needed.
+ * The window's total is shared by the plant's usual daytime shape, no hour above
+ * the rating (what one hour cannot take goes to the others), so a window fits as
+ * soon as it has enough hours to hold the energy. Shared hours are flagged
+ * estimated; day totals never change. A window that still does not fit after
+ * MAX_WINDOW hours is marked missing.
+ */
+/** Share `total` by `weights`, none above `cap`: what a full hour cannot take goes to the others. */
+function fillUpTo(total: number, weights: number[], cap: number): number[] {
+  const out = weights.map(() => 0);
+  const open = new Set(weights.map((_, i) => i));
+  let left = total;
+  while (left > 1e-9 && open.size) {
+    const wSum = [...open].reduce((x, i) => x + weights[i], 0);
+    let spill = 0;
+    for (const i of [...open]) {
+      const want = left * (wSum > 0 ? weights[i] / wSum : 1 / open.size);
+      const take = Math.min(want, cap - out[i]);
+      out[i] += take;
+      spill += want - take;
+      if (out[i] >= cap - 1e-9) open.delete(i);
+    }
+    left = spill;
+  }
+  return out;
+}
+
+function settleHandReadings(out: Hours, ratingMw: number | null) {
+  if (!ratingMw) return;
+  const rating = ratingMw * 1000;
+  const cap = rating * HAND_READING_HEADROOM;
+  const by = Array.from({ length: 24 }, () => ({ sum: 0, n: 0 }));
+  for (const [ts, v] of out.hours) {
+    if (out.estimated.has(ts) || v < 0 || v > cap) continue;
+    by[hourOfDay(ts)].sum += v;
+    by[hourOfDay(ts)].n += 1;
+  }
+  const typical = (h: number) => (by[h].n ? by[h].sum / by[h].n : 0);
+  const shortness = (v: number, h: number) => (typical(h) > 0 ? v / typical(h) : v > 0 ? Infinity : 0);
+
+  for (const day of out.days) {
+    const at = (h: number) => day + h * HOUR;
+    const val = (h: number) => (h >= DAYLIGHT_FROM && h < DAYLIGHT_TO ? out.hours.get(at(h)) : undefined);
+    for (;;) {
+      let start = -1;
+      for (let h = DAYLIGHT_FROM; h < DAYLIGHT_TO && start < 0; h++) {
+        const v = val(h);
+        if (v !== undefined && (v < 0 || v > cap)) start = h;
+      }
+      if (start < 0) break;
+      let [a, b] = [start, start];
+      for (;;) {
+        let sum = 0;
+        for (let h = a; h <= b; h++) sum += val(h)!;
+        if (sum >= 0 && sum <= rating * (b - a + 1)) {
+          const shares = fillUpTo(sum, Array.from({ length: b - a + 1 }, (_, k) => typical(a + k)), rating);
+          shares.forEach((x, k) => {
+            if (b > a) out.estimated.add(at(a + k));
+            out.hours.set(at(a + k), x);
+          });
+          break;
+        }
+        const left = val(a - 1) !== undefined ? a - 1 : null;
+        const right = val(b + 1) !== undefined ? b + 1 : null;
+        let next: number | null;
+        if (sum < 0) next = right ?? left; // the correcting reading comes later
+        else if (left === null || right === null) next = left ?? right;
+        else next = shortness(val(left)!, left) <= shortness(val(right)!, right) ? left : right;
+        if (next === null || b - a + 1 >= MAX_WINDOW) {
+          for (let h = a; h <= b; h++) {
+            out.hours.delete(at(h));
+            out.estimated.delete(at(h));
+            out.missing(at(h), `hand readings could not be placed (${Math.round(sum).toLocaleString("en-US")} kWh over ${b - a + 1} h)`);
+          }
+          break;
+        }
+        if (next < a) a = next;
+        else b = next;
+      }
+    }
   }
 }
 
@@ -253,6 +386,7 @@ export function parseSolarHourGrid(sheet: Sheet, sourceName: string): Series[] {
       }
     }
   }
+  dropAboveRating(out, alias);
   return [out.toSeries("solar-hour-grid", alias, sourceName, "zero")];
 }
 
@@ -281,6 +415,7 @@ export function parseSolarReadingGrid(sheet: Sheet, sourceName: string): Series[
     rollForward(day, labelRows.map(({ r, label }) => [label, num(rows[r][c])]), out, spans);
   }
   spreadSpans(spans, out);
+  settleHandReadings(out, capacityLabel(alias) ? parseFloat(alias) : null);
   return [out.toSeries("solar-reading-grid", alias, sourceName, "zero")];
 }
 
@@ -294,7 +429,7 @@ export function isSolarDayBlocks(rows: Row[]) {
 
 export function parseSolarDayBlocks(sheet: Sheet, sourceName: string): Series[] {
   const { rows } = sheet;
-  const plants = new Map<string, { out: Hours; spans: Span[] }>();
+  const plants = new Map<string, { out: Hours; spans: Span[]; ratingMw: number }>();
   for (let i = 0; i < rows.length; i++) {
     if (!isBlockStart(rows[i])) continue;
     const head = rows[i];
@@ -304,12 +439,17 @@ export function parseSolarDayBlocks(sheet: Sheet, sourceName: string): Series[] 
     if (day === null) continue;
     // energy columns: sub-header "… GEN"; plant = nearest group label on the DATE row at or left of it
     const groups = new Map<string, number[]>();
+    const rating = new Map<string, number>();
     for (let c = timeCol + 1; c < Math.max(head.length, sub.length); c++) {
       if (!/gen/i.test(str(sub[c]))) continue;
       let g = c;
       while (g > timeCol && !str(head[g])) g--;
       const name = str(head[g]);
-      if (g > timeCol && name) groups.set(name, [...(groups.get(name) ?? []), c]);
+      if (g > timeCol && name) {
+        groups.set(name, [...(groups.get(name) ?? []), c]);
+        // "3MW HOURLY INV GEN" + "2MW HOURLY INV GEN" → a 5 MW plant
+        rating.set(name, (rating.get(name) ?? 0) + parseFloat(capacityLabel(str(sub[c])) ?? "0"));
+      }
     }
     const readings = new Map<string, [number, number | null][]>([...groups.keys()].map((g) => [g, []]));
     let r = i + 2;
@@ -322,7 +462,8 @@ export function parseSolarDayBlocks(sheet: Sheet, sourceName: string): Series[] 
       }
     }
     for (const [g, list] of readings) {
-      const p = plants.get(g) ?? { out: new Hours(), spans: [] };
+      const p = plants.get(g) ?? { out: new Hours(), spans: [], ratingMw: 0 };
+      p.ratingMw = Math.max(p.ratingMw, rating.get(g) ?? 0);
       plants.set(g, p);
       rollForward(day, list, p.out, p.spans);
     }
@@ -330,6 +471,7 @@ export function parseSolarDayBlocks(sheet: Sheet, sourceName: string): Series[] 
   }
   return [...plants.entries()].map(([alias, p]) => {
     spreadSpans(p.spans, p.out);
+    settleHandReadings(p.out, p.ratingMw || null);
     return p.out.toSeries("solar-day-blocks", alias, sourceName, "zero");
   });
 }

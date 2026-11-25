@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import type { DeviceActuals } from "./actuals";
 import type { Quarter } from "./quarter";
-import type { Device, HourlyResult } from "./types";
+import type { Device, EnergyType, HourlyResult } from "./types";
 
 export interface SummaryRow {
   sl: number;
@@ -9,6 +9,7 @@ export interface SummaryRow {
   client: string;
   registryId: string;
   deviceName: string;
+  energyType: EnergyType | null;
   actual: [number | null, number | null, number | null];
   actualTotal: number | null;
   eligible: number | null;
@@ -41,6 +42,7 @@ export function buildSummary(devices: Device[], results: Record<string, HourlyRe
       client: d.client,
       registryId: d.registryId,
       deviceName: d.facilityId,
+      energyType: d.energyType,
       actual,
       actualTotal,
       eligible,

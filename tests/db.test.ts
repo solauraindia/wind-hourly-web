@@ -41,6 +41,10 @@ describe("app database", () => {
     const d = devices.find((x) => x.registryId === "1.5MWIND016")!;
     expect(d).toMatchObject({ meterId: "59244760157", client: "Rajaguru Spinning Mills Pvt Ltd", inIrec: true, outputName: "RSMKP-04" });
     expect(devices.find((x) => x.registryId === "2.1MWIND007")!.inIrec).toBe(false);
+    // wind / solar from irec project_types; unknown when irec has no row
+    expect(d.energyType).toBe("wind");
+    expect(devices.find((x) => x.registryId === "10MWSOLA002")!.energyType).toBe("solar");
+    expect(devices.find((x) => x.registryId === "2.1MWIND007")!.energyType).toBeNull();
     expect((await irecDevices(irec, ["1.5MWIND016", "2.7MES20003", "nope"])).size).toBe(2);
   });
 
