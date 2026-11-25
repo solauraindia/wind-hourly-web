@@ -61,6 +61,16 @@ pnpm test                # golden + database tests (PGlite, no network)
 | Hourly active power trend (`Interval` + bare turbine columns; timestamps mark the hour start) | JPP Mills (NVL137, KYS060) | hourly average kW used as the hour's kWh |
 | Hourly production rows | NVL242 | used as is |
 | Daily × 24-hour matrix | Santhosh Meenakshi (SMTKP) | used as is; checked against Grand Total |
+| Solar hourly grid (days × hour labels, either orientation; labels mark the hour start) | ALC 6 MW, 10 MW | used as is; `-` or blank = missing |
+| Solar hourly readings (`Time/Date` grid; labels mark the hour end) | Acsen 3 MW | a blank rolls into the next reading, which is spread over the hours it covers (estimated) |
+| Solar daily blocks (`DATE:` blocks, plant groups of inverter columns) | Sambandam SSML 5 MW, SSTPL 2 MW | inverter columns summed per plant; same roll-forward |
+| Solar energy counter (daily or export kWh, hourly to 1-min samples) | Jayajothi 5 MW (INV sheets summed), Jayavilas 4 MW, 8 MW | counter(H+1) − counter(H); a fall is the daily reset; spikes and jumps above 1.25× rating dropped; a day the counter never moves is missing (Jayavilas 4 MW falls back to its `IGOC` counter) |
+| Solar 15-min energy (portal HTML saved as `.xls`; stamps mark the interval end) | KM Knitwear 2 MW, Jayavishnu 2 MW | sum of the hour's four intervals; monthly files joined |
+
+Solar hours from 19:00 to 05:00 are zero, as is any hour a grid does not list.
+Monthly sheets and files of one solar plant are joined into one series. Time
+series whose rows go back and forth in time are checked for a day/month swap
+(dates up to the 12th stored month-first) and read the steadier way.
 
 To support a new vendor export, add a parser that returns `Series[]` and a sniff
 rule in `detect.ts`.

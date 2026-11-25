@@ -199,7 +199,7 @@ export function ProcessFlow({ devices, quarter, reconciled = {} }: { devices: De
               ref={fileInput}
               type="file"
               multiple
-              accept=".xlsx,.txt,.zip"
+              accept=".xlsx,.xls,.txt,.zip"
               hidden
               onChange={(e) => {
                 add([...(e.target.files ?? [])].map((f) => ({ file: f, path: f.name })));

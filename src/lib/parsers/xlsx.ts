@@ -40,3 +40,29 @@ export async function readWorkbook(buf: Uint8Array): Promise<Sheet[]> {
 export const str = (c: Cell | undefined) => (typeof c === "string" ? c.trim() : c == null ? "" : String(c).trim());
 export const num = (c: Cell | undefined): number | null =>
   typeof c === "number" && Number.isFinite(c) ? c : typeof c === "string" && c.trim() !== "" && Number.isFinite(Number(c)) ? Number(c) : null;
+
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+const decodeEntities = (s: string) =>
+  s.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e: string) =>
+    e[0] === "#" ? String.fromCodePoint(e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : +e.slice(1)) : (ENTITIES[e.toLowerCase()] ?? m),
+  );
+
+/** Web portals often save an HTML table with an .xls name. One sheet per <table>; a <caption> becomes the first row. */
+export function isHtmlTable(buf: Uint8Array) {
+  const head = new TextDecoder("utf-8", { fatal: false }).decode(buf.subarray(0, 4096)).replace(/^﻿/, "").trimStart();
+  return head.startsWith("<") && /<table/i.test(new TextDecoder("utf-8", { fatal: false }).decode(buf));
+}
+
+export function readHtmlTables(buf: Uint8Array): Sheet[] {
+  const html = new TextDecoder("utf-8", { fatal: false }).decode(buf);
+  const text = (s: string) => decodeEntities(s.replace(/<[^>]*>/g, "")).trim();
+  return [...html.matchAll(/<table[\s\S]*?<\/table>/gi)].map((t, i) => {
+    const rows: Row[] = [];
+    const caption = t[0].match(/<caption[^>]*>([\s\S]*?)<\/caption>/i);
+    if (caption) rows.push([text(caption[1])]);
+    for (const tr of t[0].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+      rows.push([...tr[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((c) => text(c[1]) || null));
+    }
+    return { name: `Table ${i + 1}`, rows };
+  });
+}

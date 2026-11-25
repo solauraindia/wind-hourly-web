@@ -27,11 +27,12 @@ function payload(registryId: string, fill: (i: number) => number | null): Hourly
 }
 
 describe("app database", () => {
-  it("migrations seed the 17 Q2 device mappings", async () => {
+  it("migrations seed the 17 Q2 wind and 10 solar device mappings", async () => {
     const db = await appTestDb();
     const m = await loadMappings(db);
-    expect(m).toHaveLength(17);
+    expect(m).toHaveLength(27);
     expect(m[3]).toEqual({ registryId: "2.7MES20012", alias: "ERW01", outputName: "Ottapidaram-ERW01", sourceHint: "Ottapidaram", site: "Ottapidaram" });
+    expect(m[24]).toEqual({ registryId: "2MWSES10082", alias: "2MW", outputName: "KM-Knitwear-2MW", sourceHint: "KM Knitwear", site: "Kumulur" });
   });
 
   it("joins mappings with irec master data", async () => {
@@ -92,11 +93,11 @@ describe("irec actuals", () => {
 });
 
 describe("sites", () => {
-  it("are seeded for the 16 devices whose raw exports group them, and survive a save", async () => {
+  it("are seeded for the 22 devices whose raw exports group them, and survive a save", async () => {
     const db = await appTestDb();
     const m = await loadMappings(db);
     const by = Object.fromEntries(m.map((d) => [d.outputName, d.site]));
-    expect(m.filter((d) => d.site).length).toBe(16);
+    expect(m.filter((d) => d.site).length).toBe(22);
     expect([by.ERW01, by["Ottapidaram-ERW02"], by["RSMKP-06"], by["SMTKP-01"], by.NVL137, by.NVL242]).toEqual(["Uthiyur", "Ottapidaram", "RSMKP", "SMTKP", "JPP", undefined]);
     await saveMappings(db, m.map((d) => (d.outputName === "NVL242" ? { ...d, site: "Space" } : d)), null, await mappingsVersion(db));
     expect((await loadMappings(db)).find((d) => d.outputName === "NVL242")!.site).toBe("Space");

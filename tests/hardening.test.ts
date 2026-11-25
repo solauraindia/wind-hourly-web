@@ -110,7 +110,7 @@ describe("device mapping saves", () => {
     const all = await loadMappings(db);
     await saveMappings(db, all, "a@x.in", v); // someone else saves first
     await expect(saveMappings(db, all.slice(1), "b@x.in", v)).rejects.toBeInstanceOf(StaleMappingsError);
-    expect(await loadMappings(db)).toHaveLength(17);
+    expect(await loadMappings(db)).toHaveLength(27);
   });
   it("the version fingerprint ignores the session timezone", async () => {
     const db = await appTestDb();
@@ -160,7 +160,7 @@ describe("irec", () => {
     const app = await appTestDb();
     const down: Db = { query: async () => { throw new Error("endpoint is disabled"); }, transaction: async () => {} };
     const { devices, irecError } = await loadDevicesSafe(app, down);
-    expect(devices).toHaveLength(17);
+    expect(devices).toHaveLength(27);
     expect(irecError).toMatch(/disabled/);
   });
 });

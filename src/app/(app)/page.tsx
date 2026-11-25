@@ -32,7 +32,7 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
     <>
       <PageHeader
         title="Hourly mapping"
-        subtitle="Drop raw turbine exports in any supported layout — they are detected, mapped to devices and written in the meter-data template."
+        subtitle="Drop raw turbine or solar plant exports in any supported layout — they are detected, mapped to devices and written in the meter-data template."
         quarter={quarter.key}
       />
       <div className="mx-auto max-w-[1400px] space-y-6 px-6 py-6">
@@ -75,7 +75,7 @@ export default async function ProcessPage({ searchParams }: PageProps<"/">) {
           </div>
           {devices.length === 0 ? (
             <div className="px-5 py-10 text-center text-sm text-muted">
-              No devices yet. <Link className="font-medium text-accent underline-offset-2 hover:underline" href={`/devices?q=${quarter.key}`}>Add devices</Link> to map raw turbine names to irec devices.
+              No devices yet. <Link className="font-medium text-accent underline-offset-2 hover:underline" href={`/devices?q=${quarter.key}`}>Add devices</Link> to map raw turbine and plant names to irec devices.
             </div>
           ) : (
             <div className="overflow-x-auto">

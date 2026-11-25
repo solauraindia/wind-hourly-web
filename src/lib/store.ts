@@ -1,5 +1,5 @@
 import "server-only";
-import { MAX_HOURLY_KWH } from "./hourly";
+import { MAX_STORED_KWH } from "./hourly";
 import { SOURCE_NAME_MAX, quarterHours, roundKwh, type HourlyPayload } from "./compute";
 import type { Db } from "./db";
 import { irecDevices, type IrecDevice } from "./irec";
@@ -124,7 +124,7 @@ export function validatePayload(input: HourlyPayload): { payload: HourlyPayload;
   if (!Array.isArray(p.kwh) || p.kwh.length !== n) throw new Error(`expected ${n} hourly values`);
   const kwh = p.kwh.map((v) => {
     if (v === null) return null;
-    if (typeof v !== "number" || !Number.isFinite(v) || Math.abs(v) > MAX_HOURLY_KWH) throw new Error(`hourly value out of range: ${v}`);
+    if (typeof v !== "number" || !Number.isFinite(v) || Math.abs(v) > MAX_STORED_KWH) throw new Error(`hourly value out of range: ${v}`);
     return roundKwh(v);
   });
   if (!kwh.some((v) => v !== null)) throw new Error(`no data inside ${quarter.key}`);

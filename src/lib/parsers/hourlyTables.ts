@@ -18,7 +18,7 @@ export function findHourlyLongHeader(rows: Row[]) {
 }
 
 /** '1/1/2026\n00:00' (m/d/yyyy + HH:MM), a real Date cell, or '2026-01-01 00:00'. */
-function parseDateTime(c: Row[number]): number | null {
+export function parseDateTime(c: Row[number]): number | null {
   const d = fromExcelDate(c);
   if (d !== null) return d;
   const s = str(c);

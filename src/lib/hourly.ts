@@ -7,6 +7,12 @@ import type { Series, TenMinSample } from "./types";
  */
 export const MAX_HOURLY_KWH = 3000;
 
+/**
+ * Upper bound for any stored hour. The largest devices are 10 MW solar plants;
+ * this leaves headroom and still rejects counter glitches.
+ */
+export const MAX_STORED_KWH = 20_000;
+
 export interface HourlyBuild {
   /** hour start → kWh */
   hours: Map<number, number>;
@@ -94,8 +100,9 @@ export function hourlyFromPower(samples: TenMinSample[]): HourlyBuild {
 
 export function buildHourly(series: Series): HourlyBuild {
   if (series.kind === "hourly") {
-    const out: HourlyBuild = { hours: new Map(series.hours), estimated: new Set(), dropped: new Map(), sampleTimes: [] };
+    const out: HourlyBuild = { hours: new Map(series.hours), estimated: new Set(series.estimatedHours), dropped: new Map(), sampleTimes: [] };
     for (const b of series.blankHours) out.dropped.set(b, "blank cell in source");
+    for (const [ts, reason] of series.dropped ?? []) out.dropped.set(ts, reason);
     return out;
   }
   return series.powerOnly ? hourlyFromPower(series.samples) : hourlyFromRegister(series.samples, series.registerModulo);

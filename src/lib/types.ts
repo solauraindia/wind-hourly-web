@@ -5,7 +5,12 @@ export type SourceFormat =
   | "power-trend" // "Analogue Value Trending": 10-min average kW per turbine column, interval-END stamps
   | "power-trend-hourly" // same export at 1-hour intervals: hour-START stamps, average kW = the hour's kWh
   | "hourly-long" // one row per hour: Turbine No | Date & Time | Production (kWh)
-  | "daily-matrix"; // one row per turbine-day with hour columns 1..24 (kWh)
+  | "daily-matrix" // one row per turbine-day with hour columns 1..24 (kWh)
+  | "solar-hour-grid" // solar day × hour grid, labels mark the hour START (ALC)
+  | "solar-reading-grid" // solar hour × day grid of hour-ENDING readings; a gap rolls into the next reading (Acsen)
+  | "solar-day-blocks" // one block per day of hour-ENDING inverter readings, several plants side by side (Sambandam)
+  | "solar-counter" // solar "today"/export energy counter, any sampling (Jayajothi, Jayavilas)
+  | "solar-interval"; // solar energy per 15-min interval, portal export (KM Knitwear, Jayavishnu)
 
 export const FORMAT_LABELS: Record<SourceFormat, string> = {
   "regen-mean": "Regen 10-min mean files",
@@ -14,6 +19,11 @@ export const FORMAT_LABELS: Record<SourceFormat, string> = {
   "power-trend-hourly": "Hourly active power trend",
   "hourly-long": "Hourly production rows",
   "daily-matrix": "Daily × 24-hour matrix",
+  "solar-hour-grid": "Solar hourly grid",
+  "solar-reading-grid": "Solar hourly readings",
+  "solar-day-blocks": "Solar daily blocks",
+  "solar-counter": "Solar energy counter",
+  "solar-interval": "Solar 15-min energy",
 };
 
 /** A 10-minute sample keyed by naive-local interval START. */
@@ -48,6 +58,10 @@ export type Series =
       hours: [number, number][];
       /** hours that exist in the source but are blank */
       blankHours: number[];
+      /** hours whose value was estimated (e.g. a reading spread over the hours it covers) */
+      estimatedHours?: number[];
+      /** hours the source covers but that produced no value, with the reason */
+      dropped?: [number, string][];
     };
 
 export interface SeriesInfo {

@@ -4,7 +4,8 @@ import { findDailyMatrixHeader, findHourlyLongHeader, parseDailyMatrix, parseHou
 import { parsePowerTrend, powerTrendFormat } from "./powerTrend";
 import { REGEN_FILE_RE, isRegenSheet, mergeRegenFiles, parseRegenSheet, parseRegenText } from "./regenMean";
 import { findScadaHeader, parseScada } from "./scadaMeterReading";
-import { readWorkbook, type Row } from "./xlsx";
+import { mergeSolarSeries, parseSolarWorkbook } from "./solar";
+import { isHtmlTable, readHtmlTables, readWorkbook, type Row } from "./xlsx";
 
 export interface InputFile {
   /** file name, possibly with a relative folder path ("RSMKP-01 MEAN file/RSMKP-01_m260401.txt") */
@@ -49,6 +50,7 @@ export function sniffSheet(rows: Row[]): SourceFormat | null {
 
 export async function detectAndParse(files: InputFile[]): Promise<{ series: Series[]; warnings: DetectWarning[] }> {
   const series: Series[] = [];
+  const solar: Series[] = [];
   const warnings: DetectWarning[] = [];
   // regen daily files are grouped per turbine across the whole upload
   const regen = new Map<string, { source: string; files: ReturnType<typeof parseRegenText>[] }>();
@@ -69,11 +71,25 @@ export async function detectAndParse(files: InputFile[]): Promise<{ series: Seri
         regen.set(alias, g);
         continue;
       }
+      if (/\.xls$/i.test(name)) {
+        const tables = isHtmlTable(file.data) ? parseSolarWorkbook(readHtmlTables(file.data), name) : null;
+        if (tables) solar.push(...tables);
+        else warnings.push({ file: file.name, message: "Old-style .xls is not supported — save it as .xlsx" });
+        continue;
+      }
       if (!/\.xlsx$/i.test(name)) {
         warnings.push({ file: file.name, message: "Unsupported file type — skipped" });
         continue;
       }
       const sheets = await readWorkbook(file.data);
+      // wind layouts first, so a solar sniff can never take over a known wind export
+      if (!sheets.some((s) => sniffSheet(s.rows))) {
+        const found = parseSolarWorkbook(sheets, name);
+        if (found) {
+          solar.push(...found);
+          continue;
+        }
+      }
       let matched = false;
       for (const sheet of sheets) {
         const fmt = sniffSheet(sheet.rows);
@@ -103,6 +119,13 @@ export async function detectAndParse(files: InputFile[]): Promise<{ series: Seri
       continue;
     }
     series.push(s);
+  }
+
+  // solar plants arrive as one sheet or one file per month: join them per plant
+  const merged = mergeSolarSeries(solar);
+  series.push(...merged.series);
+  for (const c of merged.conflicts) {
+    warnings.push({ file: c.source, message: `${c.alias}: ${c.hours} hours appear more than once with different values — the first was kept` });
   }
   return { series, warnings };
 }
